@@ -35,6 +35,7 @@
   const selection = new Set();
   const ui = {
     brush: 60, brushMode: 'add', rough: true,
+    fillMode: 'land', fillGap: 8,
     scatter: false, spacing: 1, randScale: 0.15, randRot: 0, randFlip: true, stampScale: 1, depthSort: true,
     lineKind: 'river', lineWidth: 6,
     textFont: 'IM Fell English', textSize: 60, textColor: null, textBold: false, textItalic: false,
@@ -335,6 +336,7 @@
     ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 30; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, doc.width, doc.height); ctx.restore();
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, doc.width, doc.height); ctx.clip();
     renderMapContent(ctx, base, { floatLand: true });
+    if (leakFlash) ctx.drawImage(leakFlash, 0, 0, doc.width, doc.height);
     if (paintPreview) { ctx.globalAlpha = 0.85; ctx.drawImage(paintPreview, 0, 0, doc.width, doc.height); ctx.globalAlpha = 1; }
     if (lineDraft && lineDraft.pts.length > 1) drawLine(ctx, lineDraft);
     ctx.restore();
@@ -352,7 +354,7 @@
       const ghost = { t: 'asset', a: stampKey, x: hoverPt.x, y: hoverPt.y, s: ui.stampScale, r: 0, o: 0.55 };
       drawAsset(ctx, ghost);
     }
-    $('#zoomLabel').textContent = `${Math.round(view.zoom * 100)}%`;
+    { const zi = $('#zoomInput'); if (zi && document.activeElement !== zi) zi.value = `${Math.round(view.zoom * 100)}%`; }
     updateScrollbars();
   }
   function loop() { if (needsDraw) { needsDraw = false; draw(); } requestAnimationFrame(loop); }
@@ -624,6 +626,101 @@
   function setLandScale(v) { if (!landSel) return; landSel.s = clamp(v, 0.05, 10); applyLandItems(); }
   function setLandRot(v) { if (!landSel) return; landSel.r = ((v + 540) % 360) - 180; applyLandItems(); }
 
+  // ------------------------------------------------------------------ fill bucket (land layer)
+  // Land mode: click inside an outline to fill that enclosed water with land.
+  // Water mode: click a piece of land to turn all of it back into sea.
+  function dilateMask(srcCanvas, r) { // grow the white area of a mask by ~r pixels
+    const c = document.createElement('canvas'); c.width = srcCanvas.width; c.height = srcCanvas.height;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(srcCanvas, 0, 0);
+    if (r > 0) for (let a = 0; a < 16; a++) for (const k of [0.5, 1]) x.drawImage(srcCanvas, Math.cos(a / 16 * 6.283) * r * k, Math.sin(a / 16 * 6.283) * r * k);
+    return c;
+  }
+  function growSolid(srcCanvas, r) { // smooth, hole-free grow of a mask by ~r pixels (blur + threshold)
+    const c = document.createElement('canvas'); c.width = srcCanvas.width; c.height = srcCanvas.height;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.filter = `blur(${Math.max(0.5, r / 2.2)}px)`; x.drawImage(srcCanvas, 0, 0); x.filter = 'none';
+    const img = x.getImageData(0, 0, c.width, c.height), d = img.data;
+    for (let i = 3; i < d.length; i += 4) { const on = d[i] > 6; d[i - 3] = d[i - 2] = d[i - 1] = 255; d[i] = on ? 255 : 0; }
+    x.putImageData(img, 0, 0);
+    return c;
+  }
+  function floodRegion(alpha, mw, mh, sx, sy, inside) { // returns { seen, touchesEdge, count }
+    const seen = new Uint8Array(mw * mh), stack = new Int32Array(mw * mh); let sp = 0, count = 0, edge = false;
+    const s0 = sy * mw + sx; if (!inside(alpha[s0 * 4 + 3])) return null;
+    seen[s0] = 1; stack[sp++] = s0;
+    while (sp) {
+      const i = stack[--sp], px = i % mw, py = (i / mw) | 0; count++;
+      if (px === 0 || py === 0 || px === mw - 1 || py === mh - 1) edge = true;
+      if (px > 0 && !seen[i - 1] && inside(alpha[(i - 1) * 4 + 3])) { seen[i - 1] = 1; stack[sp++] = i - 1; }
+      if (px < mw - 1 && !seen[i + 1] && inside(alpha[(i + 1) * 4 + 3])) { seen[i + 1] = 1; stack[sp++] = i + 1; }
+      if (py > 0 && !seen[i - mw] && inside(alpha[(i - mw) * 4 + 3])) { seen[i - mw] = 1; stack[sp++] = i - mw; }
+      if (py < mh - 1 && !seen[i + mw] && inside(alpha[(i + mw) * 4 + 3])) { seen[i + mw] = 1; stack[sp++] = i + mw; }
+    }
+    return { seen, touchesEdge: edge, count };
+  }
+  function fillAt(x, y) {
+    const mw = landMask.width, mh = landMask.height;
+    const sx = Math.floor(x * maskScale), sy = Math.floor(y * maskScale);
+    if (sx < 0 || sy < 0 || sx >= mw || sy >= mh) return;
+    const lctx = landMask.getContext('2d', { willReadFrequently: true });
+    const limg = lctx.getImageData(0, 0, mw, mh), L = limg.data;
+    const onLand = L[(sy * mw + sx) * 4 + 3] > 127;
+
+    if (ui.fillMode === 'water') {
+      if (!onLand) { status('That is already water. In Water mode, click on land to turn it into sea.'); return; }
+      const R = floodRegion(L, mw, mh, sx, sy, (a) => a > 0);
+      for (let i = 0; i < mw * mh; i++) if (R.seen[i]) L[i * 4 + 3] = 0;
+      lctx.putImageData(limg, 0, 0);
+      const p = pathMask.getContext('2d', { willReadFrequently: true }), pimg = p.getImageData(0, 0, mw, mh);
+      for (let i = 0; i < mw * mh; i++) if (R.seen[i]) pimg.data[i * 4 + 3] = 0;
+      p.putImageData(pimg, 0, 0);
+      afterFill('Land turned into sea.'); return;
+    }
+
+    if (onLand) { status('That is already land. Click inside an outline (on the water) to fill it.'); return; }
+    // close small gaps in hand-drawn outlines by growing the land a little before flooding
+    const gap = Math.max(0, Math.round(ui.fillGap * maskScale));
+    const grown = gap ? dilateMask(landMask, gap).getContext('2d', { willReadFrequently: true }).getImageData(0, 0, mw, mh).data : L;
+    if (gap && grown[(sy * mw + sx) * 4 + 3] > 127) { status('That spot is right next to the coast. Click a little further inside the outline.'); return; }
+    const R = floodRegion(grown, mw, mh, sx, sy, (a) => a <= 127);
+    if (!R) return;
+    if (R.touchesEdge) {
+      status('This water reaches the edge of the map, so it isn\'t enclosed. Close the outline with the Land brush, or raise "Close gaps", then try again.');
+      flashLeak(R.seen, mw, mh); return;
+    }
+    // grow the region back out through the water, step by step, until it meets the coastline
+    // (at most gap+2 pixels, so it fills right up to the shore but can't pour far through a gap)
+    const N = mw * mh, fill = R.seen, depth = new Uint8Array(N), q = new Int32Array(N); let qh = 0, qt = 0;
+    for (let i = 0; i < N; i++) if (fill[i]) q[qt++] = i;
+    const maxD = gap + 2;
+    while (qh < qt) {
+      const i = q[qh++], d = depth[i]; if (d >= maxD) continue;
+      const px = i % mw, py = (i / mw) | 0;
+      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue; const nx = px + ox, ny = py + oy;
+        if (nx < 0 || ny < 0 || nx >= mw || ny >= mh) continue;
+        const n = ny * mw + nx; if (fill[n] || L[n * 4 + 3] >= 250) continue;
+        fill[n] = 1; depth[n] = d + 1; q[qt++] = n;
+      }
+    }
+    for (let i = 0; i < N; i++) if (fill[i]) { L[i * 4] = L[i * 4 + 1] = L[i * 4 + 2] = 255; L[i * 4 + 3] = 255; }
+    lctx.putImageData(limg, 0, 0);
+    afterFill('Filled with land.');
+  }
+  function afterFill(msg) {
+    base = MT.renderBase(baseOpts(maskScale)); baseDirty = false; needsDraw = true;
+    commit(); status(msg);
+  }
+  let leakFlash = null;
+  function flashLeak(seen, mw, mh) { // briefly tint the water the fill would have flooded
+    const c = document.createElement('canvas'); c.width = mw; c.height = mh;
+    const x = c.getContext('2d'), img = x.createImageData(mw, mh);
+    for (let i = 0; i < mw * mh; i++) if (seen[i]) { img.data[i * 4] = 210; img.data[i * 4 + 1] = 70; img.data[i * 4 + 2] = 50; img.data[i * 4 + 3] = 90; }
+    x.putImageData(img, 0, 0); leakFlash = c; needsDraw = true;
+    setTimeout(() => { leakFlash = null; needsDraw = true; }, 1400);
+  }
+
   // ------------------------------------------------------------------ objects: create / edit
   function addAsset(key, x, y, opts = {}) {
     const o = { id: uid(), t: 'asset', a: key, x, y, s: opts.s ?? ui.stampScale, r: opts.r ?? 0, fx: !!opts.fx, o: 1 };
@@ -813,6 +910,17 @@
     });
     bar.addEventListener('wheel', (e) => { e.preventDefault(); e.stopPropagation(); const I = scrollInfo(axis); setScroll(axis, clamp(I.pos, 0, I.range) + (e.deltaY || e.deltaX)); }, { passive: false });
   }
+  // ---- zoom controls: − / + step through these levels; the box takes any %
+  const ZOOM_STEPS = [5, 10, 15, 20, 25, 33, 50, 67, 75, 100, 125, 150, 200, 300, 400, 600, 800];
+  function setZoom(z) {
+    const r = stage.getBoundingClientRect();
+    zoomAt(clamp(z, 0.03, 8) / view.zoom, r.width / 2, r.height / 2);
+  }
+  function zoomStep(dir) {
+    const cur = view.zoom * 100;
+    const next = dir > 0 ? ZOOM_STEPS.find((v) => v > cur + 0.5) : [...ZOOM_STEPS].reverse().find((v) => v < cur - 0.5);
+    setZoom((next ?? (dir > 0 ? 800 : 5)) / 100);
+  }
   function zoomFit() {
     const r = stage.parentElement.getBoundingClientRect();
     view.zoom = Math.min((r.width - 80) / doc.width, (r.height - 80) / doc.height);
@@ -848,6 +956,11 @@
       // Land brush adds land, Ocean brush turns land back into sea; Alt swaps them
       const erase = tool === 'ocean' ? !e.altKey : tool === 'land' ? e.altKey : (ui.brushMode === 'erase' || e.altKey);
       startPaint(p, tool === 'path' ? 'path' : 'land', erase); dragState = { type: 'paint' }; return;
+    }
+    if (tool === 'fill') {
+      const msg = layerBlocked('land'); if (msg) { status(msg); return; }
+      if (landSel) settleLand();
+      fillAt(p.x, p.y); return;
     }
     if ((tool === 'stamp' || tool === 'line') && layerBlocked('assets')) { status(layerBlocked('assets')); return; }
     if (tool === 'text' && layerBlocked('text')) { status(layerBlocked('text')); return; }
@@ -994,6 +1107,7 @@
     if (tool === 'pan' || spaceDown) c = 'grab';
     else if (isBrush()) c = 'none';
     else if (tool === 'stamp' || tool === 'line') c = 'crosshair';
+    else if (tool === 'fill') c = 'cell';
     else if (tool === 'text') c = 'text';
     else { const lh = hitLandHandle(p.x, p.y), h = lh ? null : hitHandle(p.x, p.y); if (lh) c = lh === 'rotate' ? 'alias' : 'nwse-resize'; else if (h) c = h.type === 'rotate' ? 'alias' : 'nwse-resize'; else if (hitTest(p.x, p.y) || (landSel && insideLandBox(p.x, p.y))) c = 'move'; else if (ui.activeLayer === 'land' && landAt(p.x, p.y)) c = 'pointer'; }
     stage.style.cursor = c;
@@ -1060,7 +1174,7 @@
     if (e.key === '1') { setActiveLayer('land'); return; }
     if (e.key === '2') { setActiveLayer('assets'); return; }
     if (e.key === '3') { setActiveLayer('text'); return; }
-    const map = { v: 'select', s: 'stamp', b: 'land', e: 'ocean', p: 'path', l: 'line', t: 'text', h: 'pan' };
+    const map = { v: 'select', s: 'stamp', b: 'land', e: 'ocean', g: 'fill', p: 'path', l: 'line', t: 'text', h: 'pan' };
     if (map[e.key.toLowerCase()]) setTool(map[e.key.toLowerCase()]);
   });
   window.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceDown = false; stage.style.cursor = ''; } });
@@ -1131,7 +1245,7 @@
   function setTool(t) {
     if (t !== 'select') settleLand();
     tool = t;
-    const want = { land: 'land', ocean: 'land', path: 'land', stamp: 'assets', line: 'assets', text: 'text' }[t];
+    const want = { land: 'land', ocean: 'land', path: 'land', fill: 'land', stamp: 'assets', line: 'assets', text: 'text' }[t];
     if (want && doc) setActiveLayer(want, true);
     $$('.tool').forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
     renderToolOptions(); needsDraw = true;
@@ -1151,6 +1265,14 @@
       el.querySelectorAll('[data-bm]').forEach((b) => b.onclick = () => { ui.brushMode = b.dataset.bm; renderToolOptions(); });
       $('#toBrush').oninput = (e) => { ui.brush = +e.target.value; $('#toBrushV').textContent = ui.brush; };
       $('#toRough').onchange = (e) => { ui.rough = e.target.checked; };
+    } else if (tool === 'fill') {
+      el.innerHTML = `
+        <b>Fill bucket</b>
+        <div class="seg"><button data-fm="land" class="${ui.fillMode === 'land' ? 'on' : ''}">Fill with land</button><button data-fm="water" class="${ui.fillMode === 'water' ? 'on' : ''}">Fill with water</button></div>
+        ${ui.fillMode === 'land' ? `<label title="Bridges small gaps in a hand-drawn outline so the fill doesn't leak out to sea">Close gaps <input type="range" id="toGap" min="0" max="40" value="${ui.fillGap}"> <span id="toGapV">${ui.fillGap}</span></label>` : ''}
+        <span class="muted">${ui.fillMode === 'land' ? 'Click inside an outline' : 'Click a piece of land'}</span>`;
+      el.querySelectorAll('[data-fm]').forEach((b) => b.onclick = () => { ui.fillMode = b.dataset.fm; renderToolOptions(); });
+      if ($('#toGap')) $('#toGap').oninput = (e) => { ui.fillGap = +e.target.value; $('#toGapV').textContent = ui.fillGap; };
     } else if (tool === 'stamp') {
       const inf = stampKey ? assetInfo(stampKey) : null;
       el.innerHTML = `
@@ -1572,7 +1694,7 @@
       <div class="actions"><button class="primary" id="cOk">Close</button></div>`, (d) => { d.querySelector('#cOk').onclick = closeDialog; });
   }
   function shortcutsDialog() {
-    const rows = [['V / S / B / E / P / L / T / H', 'Select · Stamp · Land brush · Ocean brush · Ground · Lines · Text · Pan'], ['Space + drag, middle mouse', 'Pan'], ['Mouse wheel', 'Zoom'], ['Shift+wheel / Alt+wheel', 'Scroll sideways / up and down (or drag the scroll bars)'], ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / Cut / Paste (pastes at the mouse, same size and rotation)'], ['Ctrl+D', 'Duplicate'], ['Alt + drag', 'Duplicate while moving'], ['Delete', 'Delete selection'], ['R / Shift+R', 'Rotate ±15°'], ['F', 'Flip asset'], ['Click land (Select tool, Land layer)', 'Select a whole landmass to move, resize or rotate'], ['1 / 2 / 3', 'Make Land / Assets / Text the active layer'], ['[ / ]', 'Brush size, or scale selection'], ['Arrows (+Shift)', 'Nudge 1px (10px)'], ['Shift while rotating', 'Snap to 15°'], ['Alt while painting', 'Swap Land ↔ Ocean brush']];
+    const rows = [['V / S / B / E / P / L / T / H', 'Select · Stamp · Land brush · Ocean brush · Ground · Lines · Text · Pan'], ['Space + drag, middle mouse', 'Pan'], ['Mouse wheel', 'Zoom'], ['Ctrl+= / Ctrl+- / Ctrl+0', 'Zoom in / out / fit (or the − + buttons and % box at the top)'], ['G', 'Fill bucket'], ['Shift+wheel / Alt+wheel', 'Scroll sideways / up and down (or drag the scroll bars)'], ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / Cut / Paste (pastes at the mouse, same size and rotation)'], ['Ctrl+D', 'Duplicate'], ['Alt + drag', 'Duplicate while moving'], ['Delete', 'Delete selection'], ['R / Shift+R', 'Rotate ±15°'], ['F', 'Flip asset'], ['Click land (Select tool, Land layer)', 'Select a whole landmass to move, resize or rotate'], ['1 / 2 / 3', 'Make Land / Assets / Text the active layer'], ['[ / ]', 'Brush size, or scale selection'], ['Arrows (+Shift)', 'Nudge 1px (10px)'], ['Shift while rotating', 'Snap to 15°'], ['Alt while painting', 'Swap Land ↔ Ocean brush']];
     openDialog(`<h2>Keyboard shortcuts</h2><table>${rows.map(([k, v]) => `<tr><td><kbd>${k}</kbd></td><td>${v}</td></tr>`).join('')}</table><div class="actions"><button class="primary" id="kOk">Close</button></div>`, (d) => { d.querySelector('#kOk').onclick = closeDialog; });
   }
 
@@ -1638,13 +1760,19 @@
     undo: () => typingNow() ? api?.nativeEdit('undo') : undo(), redo: () => typingNow() ? api?.nativeEdit('redo') : redo(),
     copy: () => typingNow() ? api?.nativeEdit('copy') : copySelection(), cut: () => typingNow() ? api?.nativeEdit('cut') : copySelection(true), paste: () => typingNow() ? api?.nativeEdit('paste') : pasteClipboard(),
     duplicate: duplicateSelection, selectAll: () => typingNow() ? api?.nativeEdit('selectAll') : selectAll(), resize: resizeDialog,
-    zoomIn: () => { const r = stage.getBoundingClientRect(); zoomAt(1.25, r.width / 2, r.height / 2); },
-    zoomOut: () => { const r = stage.getBoundingClientRect(); zoomAt(0.8, r.width / 2, r.height / 2); },
+    zoomIn: () => zoomStep(1), zoomOut: () => zoomStep(-1), zoom100: () => setZoom(1),
     zoomFit, importAsset: importAssets, credits: creditsDialog, shortcuts: shortcutsDialog
   };
   function typingNow() { return /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) && document.activeElement.type !== 'range' && document.activeElement.type !== 'checkbox'; }
   function bindCmdButtons(root) { root.querySelectorAll('[data-cmd]').forEach((b) => b.onclick = () => COMMANDS[b.dataset.cmd]?.()); }
   bindCmdButtons(document);
+  $('#zoomInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { const v = parseFloat(e.target.value); if (v > 0) setZoom(v / 100); e.target.blur(); }
+    if (e.key === 'Escape') e.target.blur();
+  });
+  $('#zoomInput').addEventListener('focus', (e) => e.target.select());
+  $('#zoomInput').addEventListener('blur', () => { needsDraw = true; });
+  $('#zoomPreset').addEventListener('change', (e) => { const v = e.target.value; e.target.value = ''; if (v === 'fit') zoomFit(); else if (v) setZoom(+v / 100); });
   if (api) api.onMenu((cmd) => COMMANDS[cmd]?.());
 
   function syncTopbar() {
@@ -1822,7 +1950,30 @@
     doc.layers.text.visible = true; doc.layers.water.visible = true; baseDirty = true; renderLayers();
     window.__land += ` landUnderAsset=${landUnderAsset} assetOnAssets=${assetOnAssets} lockedBlocks=${lockedBlocks}`;
     await wait(1500); await shot('10-land-resized');
-    document.title = `TESTDONE ${window.__clip} ${window.__land} label=${window.__label} landStart=${window.__landStart} objs=${before} pines=${pineCount} rotated=${rotated} undoR=${afterUndo} redoR=${afterRedo} sel=${castle.a} png=${window.__exportPng}`;
+    // fill bucket: draw a closed ring outline on open sea, fill inside it, then test a leaking outline
+    {
+      const areaNow = () => { const d = landMask.getContext('2d').getImageData(0, 0, landMask.width, landMask.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 127) n++; return n; };
+      setTool('land'); ui.brush = 30; const ring = []; for (let a = 0; a <= 6.4; a += 0.1) ring.push([190 + Math.cos(a) * 95, 1240 + Math.sin(a) * 70]); stroke(ring);
+      const f0 = areaNow(); setTool('fill'); ui.fillMode = 'land'; ev('pointerdown', 190, 1240); ev('pointerup', 190, 1240); const f1 = areaNow();
+      // open "C" shape with a big gap: the fill must refuse rather than flood the ocean
+      setTool('land'); const cshape = []; for (let a = 0.9; a <= 5.4; a += 0.1) cshape.push([1830 + Math.cos(a) * 95, 1240 + Math.sin(a) * 70]); stroke(cshape);
+      const g0 = areaNow(); setTool('fill'); ev('pointerdown', 1830, 1240); ev('pointerup', 1830, 1240); const g1 = areaNow();
+      await wait(300); await shot('12-fill');
+      // water mode removes the filled island again
+      ui.fillMode = 'water'; ev('pointerdown', 190, 1240); ev('pointerup', 190, 1240); const f2 = areaNow();
+      undo(); const f3 = areaNow(); ui.fillMode = 'land';
+      // an outline with a small break: refused with Close gaps = 0, filled with Close gaps = 8
+      ui.fillMode = 'water'; ev('pointerdown', 190, 1240); ev('pointerup', 190, 1240); ui.fillMode = 'land';
+      setTool('land'); ui.brush = 8; const arc = []; for (let a = 0.16; a <= 6.13; a += 0.04) arc.push([190 + Math.cos(a) * 85, 1240 + Math.sin(a) * 62]); stroke(arc);
+      setTool('fill'); const h0 = areaNow();
+      ui.fillGap = 0; ev('pointerdown', 190, 1240); ev('pointerup', 190, 1240); const h1 = areaNow();
+      ui.fillGap = 8; ev('pointerdown', 190, 1240); ev('pointerup', 190, 1240); const h2 = areaNow();
+      window.__gap = `gap0Refused=${h1 === h0} gap8Filled=${h2 > h0 + 8000}`;
+      await wait(300); await shot('13-gap-fill');
+      window.__fill = `${window.__gap} fillGrew=${(f1 / f0).toFixed(3)} leakRefused=${g1 === g0} waterMode=${f2 < f0} undo=${f3 === g1}`;
+      setTool('select');
+    }
+    document.title = `TESTDONE ${window.__fill} ${window.__clip} ${window.__land} label=${window.__label} landStart=${window.__landStart} objs=${before} pines=${pineCount} rotated=${rotated} undoR=${afterUndo} redoR=${afterRedo} sel=${castle.a} png=${window.__exportPng}`;
   }
   boot();
 })();

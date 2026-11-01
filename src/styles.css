@@ -43,7 +43,10 @@ label { color: var(--muted); }
 #topbar .group label { display: flex; align-items: center; gap: 6px; }
 #topbar .chk { cursor: pointer; }
 #topbar .spacer { flex: 1; }
-#zoomLabel { min-width: 46px; text-align: right; color: var(--muted); }
+#zoomInput { width: 58px; text-align: center; padding: 4px 4px; }
+.zbtn { width: 30px; padding: 3px 0; font-size: 17px; line-height: 1; font-weight: 600; }
+#zoomPreset { width: 84px; }
+.tool .svgicon { display: flex; height: 19px; align-items: center; }
 
 #layout { display: grid; grid-template-columns: 64px 290px 1fr 290px; height: calc(100% - 46px); }
 

@@ -23,10 +23,12 @@ Includes ships (galleon, longship, merchant ship, rowing boat, cargo ship), dock
 **Editing**
 - Adjustable map size (presets or custom up to 8000 × 8000) — resize later by extending/cropping or by scaling everything
 - **Scroll bars** along the bottom and right of the map area: drag them, or click the track to jump a page. The mouse wheel zooms; Shift+wheel scrolls sideways and Alt+wheel scrolls up and down
+- **Zoom controls** in the top bar: **−** and **+** buttons, a box where you can type any zoom % (press Enter), a preset list (25%–400%) and **Fit**
 - Every asset can be moved, **rotated** (handle, R key, or slider) and **scaled** (corner handles, [ ] keys, or slider), flipped, layered, faded
 - **Copy, Cut & Paste** (Ctrl+C / Ctrl+X / Ctrl+V, the Edit menu, or the buttons in Properties): copies keep their exact size, rotation, flip and opacity, and are pasted where your mouse pointer is. This works for one item or a whole group, and for text and lines too, including between maps
 - **Scatter brush** to paint whole forests or mountain ranges with random size, rotation and flip
 - Every new map starts as **open ocean**. Paint land in any shape with the **Land brush** (B), and turn land back into sea with the **Ocean brush** (E). Coastlines are inked automatically. The **Ground brush** paints roads, dirt and clearings
+- **Fill bucket** (G): draw a coastline outline, then click inside it to fill it with land. **Close gaps** bridges small breaks in a hand-drawn outline. If the outline isn't closed, the fill refuses and briefly shows the water it would have flooded. **Fill with water** mode turns a whole piece of land back into sea with one click
 - **Layers**: 1 **Water** (base), 2 **Land**, 3 **Assets** (mountains, towns, ships, rivers and roads), 4 **Text** (always on top). Each layer can be hidden or locked, and hidden layers are left out of exports. The Select tool only picks things on the **active** layer. Click a layer in the Layers panel, or press 1 for Land, 2 for Assets, 3 for Text. Drawing tools switch to their own layer automatically.
 - **Resize land**: make **Land** the active layer, choose **Select** and click any land, even under mountains or towns. Drag a corner to make it **bigger or smaller**, drag inside the box to move it, or use the round handle to rotate it. Size and rotation can also be typed in. Items on that land move with it (this can be turned off). Delete removes the land, and Esc or **Done** finishes
 - **Line tool** for tapering rivers, dashed roads, dotted trails, dash-dot borders and walls
@@ -91,9 +93,9 @@ npm run assets
 
 | Key | Action |
 |---|---|
-| V S B E P L T H | Select · Stamp · Land brush · Ocean brush · Ground · Lines · Text · Pan |
+| V S B E G P L T H | Select · Stamp · Land brush · Ocean brush · Fill bucket · Ground · Lines · Text · Pan |
 | Space + drag / middle mouse | Pan |
-| Wheel | Zoom |
+| Wheel, Ctrl+= / Ctrl+- / Ctrl+0 | Zoom / zoom in / zoom out / fit |
 | Scroll bars, Shift+wheel / Alt+wheel | Scroll sideways / up and down |
 | Ctrl+Z / Ctrl+Y | Undo / Redo |
 | Ctrl+C / Ctrl+X / Ctrl+V | Copy / Cut / Paste (pastes at the mouse, same size) |
