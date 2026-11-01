@@ -164,3 +164,9 @@ button:disabled:hover { border-color: var(--line); }
 .sbar.h .thumb { top: 3px; height: 8px; }
 .sbar.v .thumb { left: 3px; width: 8px; }
 .sbar .thumb:hover, .sbar .thumb.drag { background: var(--accent2); }
+
+/* centred message for tool feedback (fill bucket etc.) */
+#toast { position: absolute; left: 50%; bottom: 46px; transform: translate(-50%, 12px); max-width: min(620px, calc(100% - 60px)); padding: 10px 16px; border-radius: 8px; font-size: 14px; line-height: 1.4; text-align: center; background: #2b241c; border: 1px solid var(--accent2); color: var(--text); box-shadow: 0 10px 30px rgba(0,0,0,.45); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 3; }
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+#toast.warn { border-color: #c4553f; background: #3a221d; }
+#toast.ok { border-color: #6f9a4a; }

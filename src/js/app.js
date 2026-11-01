@@ -35,7 +35,7 @@
   const selection = new Set();
   const ui = {
     brush: 60, brushMode: 'add', rough: true,
-    fillMode: 'land', fillGap: 8,
+    fillMode: 'land', fillGap: 12, autoClose: true,
     scatter: false, spacing: 1, randScale: 0.15, randRot: 0, randFlip: true, stampScale: 1, depthSort: true,
     lineKind: 'river', lineWidth: 6,
     textFont: 'IM Fell English', textSize: 60, textColor: null, textBold: false, textItalic: false,
@@ -454,16 +454,28 @@
   }
   function startPaint(pt, kind, erase) {
     paintPreview = document.createElement('canvas'); paintPreview.width = landMask.width; paintPreview.height = landMask.height;
-    painting = { mask: kind === 'land' ? landMask : pathMask, erase, last: pt, rng: MT.rng(Math.floor(Math.random() * 1e9)) };
+    painting = { mask: kind === 'land' ? landMask : pathMask, erase, last: pt, start: pt, len: 0, minX: pt.x, maxX: pt.x, minY: pt.y, maxY: pt.y, rng: MT.rng(Math.floor(Math.random() * 1e9)) };
     dab(painting.mask, pt.x, pt.y, ui.brush, erase, ui.rough, painting.rng);
   }
   function continuePaint(pt) {
     const p = painting; const d = Math.hypot(pt.x - p.last.x, pt.y - p.last.y); const step = Math.max(2, ui.brush * 0.18);
     for (let t = step; t <= d; t += step) dab(p.mask, p.last.x + ((pt.x - p.last.x) * t) / d, p.last.y + ((pt.y - p.last.y) * t) / d, ui.brush, p.erase, ui.rough, p.rng);
-    if (d >= step) p.last = pt;
+    if (d >= step) { p.len += d; p.last = pt; p.minX = Math.min(p.minX, pt.x); p.maxX = Math.max(p.maxX, pt.x); p.minY = Math.min(p.minY, pt.y); p.maxY = Math.max(p.maxY, pt.y); }
     needsDraw = true;
   }
   function endPaint() {
+    const p = painting;
+    // Land brush outlines: if the stroke loops round and finishes near where it began, join the ends
+    if (p && p.mask === landMask && !p.erase && ui.autoClose) {
+      const gap = Math.hypot(p.last.x - p.start.x, p.last.y - p.start.y);
+      const span = Math.max(p.maxX - p.minX, p.maxY - p.minY);
+      const reach = Math.max(80 / view.zoom, ui.brush * 3, span * 0.3);   // how far apart the ends may be
+      if (p.len > ui.brush * 6 && span > ui.brush * 3 && gap > ui.brush * 0.4 && gap <= reach && gap < p.len * 0.35) {
+        const n = Math.ceil(gap / Math.max(2, ui.brush * 0.18));
+        for (let i = 1; i <= n; i++) dab(landMask, p.last.x + (p.start.x - p.last.x) * i / n, p.last.y + (p.start.y - p.last.y) * i / n, ui.brush, false, ui.rough, p.rng);
+        status('Outline closed: the ends of your stroke were joined. Use the Fill bucket to fill it in.');
+      }
+    }
     painting = null;
     base = MT.renderBase(baseOpts(maskScale));
     baseDirty = false; paintPreview = null; needsDraw = true;
@@ -645,7 +657,8 @@
     x.putImageData(img, 0, 0);
     return c;
   }
-  function floodRegion(alpha, mw, mh, sx, sy, inside) { // returns { seen, touchesEdge, count }
+  function floodRegion(alpha, mw, mh, sx, sy, inside, insideIdx) { // returns { seen, touchesEdge, count }
+    if (insideIdx) { const ok = insideIdx; inside = null; alpha = null; return floodIdx(mw, mh, sx, sy, ok); }
     const seen = new Uint8Array(mw * mh), stack = new Int32Array(mw * mh); let sp = 0, count = 0, edge = false;
     const s0 = sy * mw + sx; if (!inside(alpha[s0 * 4 + 3])) return null;
     seen[s0] = 1; stack[sp++] = s0;
@@ -668,7 +681,7 @@
     const onLand = L[(sy * mw + sx) * 4 + 3] > 127;
 
     if (ui.fillMode === 'water') {
-      if (!onLand) { status('That is already water. In Water mode, click on land to turn it into sea.'); return; }
+      if (!onLand) { toast('That spot is already water. In "Fill with water" mode, click on land to turn it into sea.', 'warn'); return; }
       const R = floodRegion(L, mw, mh, sx, sy, (a) => a > 0);
       for (let i = 0; i < mw * mh; i++) if (R.seen[i]) L[i * 4 + 3] = 0;
       lctx.putImageData(limg, 0, 0);
@@ -678,16 +691,27 @@
       afterFill('Land turned into sea.'); return;
     }
 
-    if (onLand) { status('That is already land. Click inside an outline (on the water) to fill it.'); return; }
-    // close small gaps in hand-drawn outlines by growing the land a little before flooding
-    const gap = Math.max(0, Math.round(ui.fillGap * maskScale));
-    const grown = gap ? dilateMask(landMask, gap).getContext('2d', { willReadFrequently: true }).getImageData(0, 0, mw, mh).data : L;
-    if (gap && grown[(sy * mw + sx) * 4 + 3] > 127) { status('That spot is right next to the coast. Click a little further inside the outline.'); return; }
-    const R = floodRegion(grown, mw, mh, sx, sy, (a) => a <= 127);
-    if (!R) return;
-    if (R.touchesEdge) {
-      status('This water reaches the edge of the map, so it isn\'t enclosed. Close the outline with the Land brush, or raise "Close gaps", then try again.');
-      flashLeak(R.seen, mw, mh); return;
+    if (onLand) { toast('That spot is already land. Click inside your outline, on the water, to fill it.', 'warn'); return; }
+    // Distance from every water pixel to the nearest land. A fill with gap tolerance g floods only
+    // through water that is more than g pixels from land, which seals any break in an outline up to 2g wide.
+    const N0 = mw * mh, isLand = new Uint8Array(N0);
+    for (let i = 0; i < N0; i++) isLand[i] = L[i * 4 + 3] > 127 ? 1 : 0;
+    const dist = MT.distance(isLand, mw, mh);
+    const here = dist[sy * mw + sx];
+    const g0 = Math.max(0, (ui.fillGap / view.zoom) * maskScale);          // the slider is in screen pixels
+    let R = null, gap = 0;
+    for (const g of (g0 > 0 ? [g0, g0 * 2, g0 * 3.5] : [0])) {           // escalate: seals breaks up to ~7x the slider
+      const gg = Math.min(g, here - 1.5);                                  // never seal off the spot that was clicked
+      if (gg < 0) break;
+      const r = floodRegion(null, mw, mh, sx, sy, null, (i) => dist[i] > gg);
+      if (r && !r.touchesEdge) { R = r; gap = Math.ceil(gg); break; }
+      if (gg < g) { R = r; break; }                                        // can't close any wider here
+      R = r;
+    }
+    if (!R || R.touchesEdge) {
+      toast('This outline isn\'t closed, so filling it would flood the open sea (shown in red). Join up the outline with the Land brush, or raise "Close gaps", then try again.', 'warn');
+      if (R) flashLeak(R.seen, mw, mh);
+      return;
     }
     // grow the region back out through the water, step by step, until it meets the coastline
     // (at most gap+2 pixels, so it fills right up to the shore but can't pour far through a gap)
@@ -704,13 +728,43 @@
         fill[n] = 1; depth[n] = d + 1; q[qt++] = n;
       }
     }
+    // clean-up: small pockets of water left in sharp corners of the outline (enclosed, touching the new
+    // land, and much smaller than a lake) are filled too
+    {
+      const water = new Uint8Array(N); for (let i = 0; i < N; i++) water[i] = !fill[i] && L[i * 4 + 3] <= 127 ? 1 : 0;
+      const outside = new Uint8Array(N); let h = 0, t = 0;
+      for (let x = 0; x < mw; x++) for (const y of [0, mh - 1]) { const i = y * mw + x; if (water[i] && !outside[i]) { outside[i] = 1; q[t++] = i; } }
+      for (let y = 0; y < mh; y++) for (const x of [0, mw - 1]) { const i = y * mw + x; if (water[i] && !outside[i]) { outside[i] = 1; q[t++] = i; } }
+      while (h < t) { const i = q[h++], px = i % mw; for (const n of [px > 0 ? i - 1 : -1, px < mw - 1 ? i + 1 : -1, i - mw, i + mw]) if (n >= 0 && n < N && water[n] && !outside[n]) { outside[n] = 1; q[t++] = n; } }
+      const limit = 14 * (gap + 3) * (gap + 3) + 150, done = new Uint8Array(N);
+      for (let i0 = 0; i0 < N; i0++) {
+        if (!water[i0] || outside[i0] || done[i0]) continue;
+        let qh2 = 0, qt2 = 0, touches = false; q[qt2++] = i0; done[i0] = 1;
+        while (qh2 < qt2) { const i = q[qh2++], px = i % mw; for (const n of [px > 0 ? i - 1 : -1, px < mw - 1 ? i + 1 : -1, i - mw, i + mw]) { if (n < 0 || n >= N) continue; if (fill[n]) touches = true; if (water[n] && !done[n]) { done[n] = 1; q[qt2++] = n; } } }
+        if (touches && qt2 <= limit) for (let k = 0; k < qt2; k++) fill[q[k]] = 1;
+      }
+    }
     for (let i = 0; i < N; i++) if (fill[i]) { L[i * 4] = L[i * 4 + 1] = L[i * 4 + 2] = 255; L[i * 4 + 3] = 255; }
     lctx.putImageData(limg, 0, 0);
-    afterFill('Filled with land.');
+    afterFill(gap > 2 && gap > g0 + 1 ? `Filled with land (closed a gap of about ${Math.round(gap * 2 / maskScale * view.zoom)} screen pixels in your outline).` : 'Filled with land.');
+  }
+  function floodIdx(mw, mh, sx, sy, ok) {
+    const seen = new Uint8Array(mw * mh), stack = new Int32Array(mw * mh); let sp = 0, count = 0, edge = false;
+    const s0 = sy * mw + sx; if (!ok(s0)) return null;
+    seen[s0] = 1; stack[sp++] = s0;
+    while (sp) {
+      const i = stack[--sp], px = i % mw, py = (i / mw) | 0; count++;
+      if (px === 0 || py === 0 || px === mw - 1 || py === mh - 1) edge = true;
+      if (px > 0 && !seen[i - 1] && ok(i - 1)) { seen[i - 1] = 1; stack[sp++] = i - 1; }
+      if (px < mw - 1 && !seen[i + 1] && ok(i + 1)) { seen[i + 1] = 1; stack[sp++] = i + 1; }
+      if (py > 0 && !seen[i - mw] && ok(i - mw)) { seen[i - mw] = 1; stack[sp++] = i - mw; }
+      if (py < mh - 1 && !seen[i + mw] && ok(i + mw)) { seen[i + mw] = 1; stack[sp++] = i + mw; }
+    }
+    return { seen, touchesEdge: edge, count };
   }
   function afterFill(msg) {
     base = MT.renderBase(baseOpts(maskScale)); baseDirty = false; needsDraw = true;
-    commit(); status(msg);
+    commit(); toast(msg, 'ok');
   }
   let leakFlash = null;
   function flashLeak(seen, mw, mh) { // briefly tint the water the fill would have flooded
@@ -1261,15 +1315,17 @@
         ${tool === 'path' ? `<div class="seg"><button data-bm="add" class="${ui.brushMode === 'add' ? 'on' : ''}">Paint</button><button data-bm="erase" class="${ui.brushMode === 'erase' ? 'on' : ''}">Erase</button></div>` : ''}
         <label>Size <input type="range" id="toBrush" min="4" max="600" value="${ui.brush}"> <span id="toBrushV">${ui.brush}</span></label>
         <label class="chk"><input type="checkbox" id="toRough" ${ui.rough ? 'checked' : ''}> Rough edge</label>
+        ${tool === 'land' ? `<label class="chk" title="When a stroke finishes near where it started, join the ends so the outline is closed and ready to fill"><input type="checkbox" id="toClose" ${ui.autoClose ? 'checked' : ''}> Auto-close outlines</label>` : ''}
         <span class="muted">${tool === 'land' ? 'Alt = ocean' : tool === 'ocean' ? 'Alt = land' : 'Alt = erase'} · [ ] size</span>`;
       el.querySelectorAll('[data-bm]').forEach((b) => b.onclick = () => { ui.brushMode = b.dataset.bm; renderToolOptions(); });
       $('#toBrush').oninput = (e) => { ui.brush = +e.target.value; $('#toBrushV').textContent = ui.brush; };
       $('#toRough').onchange = (e) => { ui.rough = e.target.checked; };
+      if ($('#toClose')) $('#toClose').onchange = (e) => { ui.autoClose = e.target.checked; };
     } else if (tool === 'fill') {
       el.innerHTML = `
         <b>Fill bucket</b>
         <div class="seg"><button data-fm="land" class="${ui.fillMode === 'land' ? 'on' : ''}">Fill with land</button><button data-fm="water" class="${ui.fillMode === 'water' ? 'on' : ''}">Fill with water</button></div>
-        ${ui.fillMode === 'land' ? `<label title="Bridges small gaps in a hand-drawn outline so the fill doesn't leak out to sea">Close gaps <input type="range" id="toGap" min="0" max="40" value="${ui.fillGap}"> <span id="toGapV">${ui.fillGap}</span></label>` : ''}
+        ${ui.fillMode === 'land' ? `<label title="Seals small breaks in a hand-drawn outline (measured in screen pixels) so the fill doesn't leak out to sea">Close gaps <input type="range" id="toGap" min="0" max="60" value="${ui.fillGap}"> <span id="toGapV">${ui.fillGap}</span>px</label>` : ''}
         <span class="muted">${ui.fillMode === 'land' ? 'Click inside an outline' : 'Click a piece of land'}</span>`;
       el.querySelectorAll('[data-fm]').forEach((b) => b.onclick = () => { ui.fillMode = b.dataset.fm; renderToolOptions(); });
       if ($('#toGap')) $('#toGap').oninput = (e) => { ui.fillGap = +e.target.value; $('#toGapV').textContent = ui.fillGap; };
@@ -1792,6 +1848,11 @@
   $('#gridToggle').onchange = (e) => { doc.grid.type = e.target.checked ? (doc.grid.type === 'none' ? 'square' : doc.grid.type) : 'none'; if (e.target.checked && doc.grid.type === 'none') doc.grid.type = 'square'; commit(); renderProps(); needsDraw = true; };
   $('#borderToggle').onchange = (e) => { doc.border = e.target.checked; commit(); needsDraw = true; };
 
+  let toastTimer;
+  function toast(msg, kind = 'ok') {
+    const el = $('#toast'); el.textContent = msg; el.className = `show ${kind}`;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.className = ''; }, kind === 'warn' ? 6000 : 2600);
+  }
   let statusTimer;
   function status(msg, coords = false) {
     const el = $('#status');
@@ -1956,19 +2017,19 @@
       setTool('land'); ui.brush = 30; const ring = []; for (let a = 0; a <= 6.4; a += 0.1) ring.push([190 + Math.cos(a) * 95, 1240 + Math.sin(a) * 70]); stroke(ring);
       const f0 = areaNow(); setTool('fill'); ui.fillMode = 'land'; ev('pointerdown', 190, 1240); ev('pointerup', 190, 1240); const f1 = areaNow();
       // open "C" shape with a big gap: the fill must refuse rather than flood the ocean
-      setTool('land'); const cshape = []; for (let a = 0.9; a <= 5.4; a += 0.1) cshape.push([1830 + Math.cos(a) * 95, 1240 + Math.sin(a) * 70]); stroke(cshape);
-      const g0 = areaNow(); setTool('fill'); ev('pointerdown', 1830, 1240); ev('pointerup', 1830, 1240); const g1 = areaNow();
+      ui.autoClose = false; setTool('land'); const cshape = []; for (let a = 1.6; a <= 4.7; a += 0.1) cshape.push([1830 + Math.cos(a) * 95, 1240 + Math.sin(a) * 70]); stroke(cshape);
+      const g0 = areaNow(); ui.autoClose = true; setTool('fill'); ev('pointerdown', 1830, 1240); ev('pointerup', 1830, 1240); const g1 = areaNow();
       await wait(300); await shot('12-fill');
       // water mode removes the filled island again
       ui.fillMode = 'water'; ev('pointerdown', 190, 1240); ev('pointerup', 190, 1240); const f2 = areaNow();
       undo(); const f3 = areaNow(); ui.fillMode = 'land';
       // an outline with a small break: refused with Close gaps = 0, filled with Close gaps = 8
       ui.fillMode = 'water'; ev('pointerdown', 190, 1240); ev('pointerup', 190, 1240); ui.fillMode = 'land';
-      setTool('land'); ui.brush = 8; const arc = []; for (let a = 0.16; a <= 6.13; a += 0.04) arc.push([190 + Math.cos(a) * 85, 1240 + Math.sin(a) * 62]); stroke(arc);
+      ui.autoClose = false; setTool('land'); ui.brush = 8; const arc = []; for (let a = 0.16; a <= 6.13; a += 0.04) arc.push([190 + Math.cos(a) * 85, 1240 + Math.sin(a) * 62]); stroke(arc);
       setTool('fill'); const h0 = areaNow();
       ui.fillGap = 0; ev('pointerdown', 190, 1240); ev('pointerup', 190, 1240); const h1 = areaNow();
-      ui.fillGap = 8; ev('pointerdown', 190, 1240); ev('pointerup', 190, 1240); const h2 = areaNow();
-      window.__gap = `gap0Refused=${h1 === h0} gap8Filled=${h2 > h0 + 8000}`;
+      ui.fillGap = 12; ev('pointerdown', 190, 1240); ev('pointerup', 190, 1240); const h2 = areaNow();
+      ui.autoClose = true; window.__gap = `gap0Refused=${h1 === h0} gap8Filled=${h2 > h0 + 8000}`;
       await wait(300); await shot('13-gap-fill');
       window.__fill = `${window.__gap} fillGrew=${(f1 / f0).toFixed(3)} leakRefused=${g1 === g0} waterMode=${f2 < f0} undo=${f3 === g1}`;
       setTool('select');

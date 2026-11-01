@@ -99,6 +99,7 @@
     }
   };
   MT.LOOK = LOOK;
+  MT.distance = distance; // exact-ish (5x5 chamfer) distance to the nearest 'feature' pixel
   const PAPER_RGB = { parchment: hex('#f1e3bf'), colour: hex('#f6efdc'), watercolour: hex('#f7efdc') };
 
   const noiseCache = new Map();
