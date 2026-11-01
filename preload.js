@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('mapp', {
   exportImage: (dataUrl, ext) => ipcRenderer.invoke('export-image', { dataUrl, ext }),
   importAssets: () => ipcRenderer.invoke('import-assets'),
   confirm: (message, detail) => ipcRenderer.invoke('confirm', { message, detail }),
+  nativeEdit: (action) => ipcRenderer.invoke('native-edit', action),
+  isMac: process.platform === 'darwin',
   testCapture: (p) => ipcRenderer.invoke('test-capture', p),
   testWrite: (outPath, dataUrl) => ipcRenderer.invoke('test-write', { outPath, dataUrl }),
   testMode: process.env.MAPP_TEST || '',

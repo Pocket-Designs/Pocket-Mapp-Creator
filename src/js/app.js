@@ -353,6 +353,7 @@
       drawAsset(ctx, ghost);
     }
     $('#zoomLabel').textContent = `${Math.round(view.zoom * 100)}%`;
+    updateScrollbars();
   }
   function loop() { if (needsDraw) { needsDraw = false; draw(); } requestAnimationFrame(loop); }
 
@@ -658,6 +659,52 @@
     selection.clear(); created.forEach((id) => selection.add(id));
     commit(); refreshPanels();
   }
+  // ---- clipboard: copy / cut / paste keep size, rotation, flip and opacity exactly
+  let clipboard = null, pasteSeq = 0, lastPasteAt = null;
+  function objCentre(o) { if (o.t === 'line') { const b = lineBounds(o); return [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2]; } return [o.x, o.y]; }
+  function copySelection(cut = false) {
+    if (landSel) { status('Copying land isn\'t supported. Select assets or text to copy.'); return; }
+    const sel = doc.objects.filter((o) => selection.has(o.id));   // keeps their stacking order
+    if (!sel.length) { status('Select something to copy first.'); return; }
+    const custom = {};
+    for (const o of sel) if (o.t === 'asset' && o.a.startsWith('custom:')) { const k = o.a.slice(7); if (doc.custom[k]) custom[k] = doc.custom[k]; }
+    let cx = 0, cy = 0; for (const o of sel) { const [x, y] = objCentre(o); cx += x; cy += y; }
+    clipboard = { objs: JSON.parse(JSON.stringify(sel)), custom, cx: cx / sel.length, cy: cy / sel.length };
+    pasteSeq = 0; lastPasteAt = null;
+    if (cut) { deleteIds(sel.map((o) => o.id)); commit(); refreshPanels(); needsDraw = true; }
+    status(`${cut ? 'Cut' : 'Copied'} ${sel.length} item${sel.length === 1 ? '' : 's'}. Press Ctrl+V to paste where your mouse is.`);
+    renderProps();
+  }
+  function pasteClipboard() {
+    if (!clipboard) { status('Nothing to paste yet. Select something and press Ctrl+C first.'); return; }
+    settleLand();
+    const layer = clipboard.objs.some((o) => o.t !== 'text') ? 'assets' : 'text';
+    const blocked = layerBlocked(layer); if (blocked) { status(blocked); return; }
+    // paste centred on the mouse when it's over the map, otherwise just beside the originals
+    let tx, ty;
+    const over = hoverPt && hoverPt.x >= 0 && hoverPt.y >= 0 && hoverPt.x <= doc.width && hoverPt.y <= doc.height;
+    if (over) {
+      const same = lastPasteAt && Math.hypot(hoverPt.x - lastPasteAt[0], hoverPt.y - lastPasteAt[1]) < 1;
+      pasteSeq = same ? pasteSeq + 1 : 0; lastPasteAt = [hoverPt.x, hoverPt.y];
+      tx = hoverPt.x + pasteSeq * 24; ty = hoverPt.y + pasteSeq * 24;
+    } else {
+      pasteSeq++; lastPasteAt = null;
+      tx = clipboard.cx + pasteSeq * 30; ty = clipboard.cy + pasteSeq * 30;
+    }
+    const dx = tx - clipboard.cx, dy = ty - clipboard.cy;
+    for (const [k, c] of Object.entries(clipboard.custom)) if (!doc.custom[k]) doc.custom[k] = c;
+    const ids = [];
+    for (const src of clipboard.objs) {
+      const o = JSON.parse(JSON.stringify(src)); o.id = uid(); delete o.hidden;
+      moveObj(o, dx, dy); doc.objects.push(o); ids.push(o.id);
+    }
+    if (Object.keys(clipboard.custom).length) buildLibrary();
+    setActiveLayer(layer, true);
+    selection.clear(); ids.forEach((id) => selection.add(id));
+    if (tool !== 'select') setTool('select');
+    commit(); refreshPanels(); needsDraw = true;
+    status(`Pasted ${ids.length} item${ids.length === 1 ? '' : 's'}.`);
+  }
   function moveObj(o, dx, dy) { if (o.t === 'line') o.pts = o.pts.map(([x, y]) => [x + dx, y + dy]); else { o.x += dx; o.y += dy; } }
   function reorder(dir) {
     const ids = [...selection]; if (!ids.length) return;
@@ -716,6 +763,56 @@
   function markDirty() { dirtyFlag = true; document.title = `Pocket-Mapp-Creator — ${doc.name}*`; }
 
   // ------------------------------------------------------------------ view
+  // ---- scroll bars
+  // The scrollable area is the map plus half a screen of margin on every side, so any part
+  // of the map (corners included) can be brought to the middle of the view.
+  const SB = 14;
+  function scrollInfo(axis) {
+    const r = stage.parentElement.getBoundingClientRect();
+    const vp = axis === 'x' ? r.width - SB : r.height - SB;            // visible size (px)
+    const content = (axis === 'x' ? doc.width : doc.height) * view.zoom; // map size on screen
+    const range = content;                                              // scroll distance
+    const pos = vp / 2 - (axis === 'x' ? view.ox : view.oy);            // 0 = map's left/top edge in the middle
+    return { vp, range, pos, total: content + vp };
+  }
+  function updateScrollbars() {
+    if (!doc) return;
+    for (const axis of ['x', 'y']) {
+      const bar = axis === 'x' ? $('#hScroll') : $('#vScroll'), th = bar.firstElementChild;
+      const I = scrollInfo(axis), track = axis === 'x' ? bar.clientWidth : bar.clientHeight;
+      const len = Math.max(28, track * I.vp / I.total);
+      const t = I.range > 0 ? clamp(I.pos / I.range, 0, 1) : 0.5;
+      const at = (track - len) * t;
+      if (axis === 'x') { th.style.width = `${len}px`; th.style.left = `${at}px`; }
+      else { th.style.height = `${len}px`; th.style.top = `${at}px`; }
+    }
+  }
+  function setScroll(axis, pos) {
+    const I = scrollInfo(axis); pos = clamp(pos, 0, I.range);
+    if (axis === 'x') view.ox = I.vp / 2 - pos; else view.oy = I.vp / 2 - pos;
+    needsDraw = true;
+  }
+  for (const axis of ['x', 'y']) {
+    const bar = axis === 'x' ? $('#hScroll') : $('#vScroll'), th = bar.firstElementChild;
+    const coord = (e) => (axis === 'x' ? e.clientX : e.clientY);
+    th.addEventListener('pointerdown', (e) => {
+      e.stopPropagation(); e.preventDefault(); th.setPointerCapture(e.pointerId); th.classList.add('drag');
+      const I = scrollInfo(axis), track = axis === 'x' ? bar.clientWidth : bar.clientHeight;
+      const len = axis === 'x' ? th.offsetWidth : th.offsetHeight;
+      const start = coord(e), startPos = clamp(I.pos, 0, I.range), per = I.range / Math.max(1, track - len);
+      const move = (ev) => setScroll(axis, startPos + (coord(ev) - start) * per);
+      const up = () => { th.classList.remove('drag'); th.removeEventListener('pointermove', move); th.removeEventListener('pointerup', up); th.removeEventListener('pointercancel', up); };
+      th.addEventListener('pointermove', move); th.addEventListener('pointerup', up); th.addEventListener('pointercancel', up);
+    });
+    // click the track to jump a page towards the click
+    bar.addEventListener('pointerdown', (e) => {
+      if (e.target !== bar) return;
+      const r = th.getBoundingClientRect(), I = scrollInfo(axis);
+      const before = axis === 'x' ? e.clientX < r.left : e.clientY < r.top;
+      setScroll(axis, clamp(I.pos, 0, I.range) + (before ? -1 : 1) * I.vp * 0.8);
+    });
+    bar.addEventListener('wheel', (e) => { e.preventDefault(); e.stopPropagation(); const I = scrollInfo(axis); setScroll(axis, clamp(I.pos, 0, I.range) + (e.deltaY || e.deltaX)); }, { passive: false });
+  }
   function zoomFit() {
     const r = stage.parentElement.getBoundingClientRect();
     view.zoom = Math.min((r.width - 80) / doc.width, (r.height - 80) / doc.height);
@@ -734,8 +831,11 @@
   stage.addEventListener('wheel', (e) => {
     e.preventDefault();
     const p = toMap(e);
-    if (e.ctrlKey || e.metaKey || !e.shiftKey) zoomAt(Math.exp(-e.deltaY * 0.0015), p.sx, p.sy);
-    else { view.ox -= e.deltaY; needsDraw = true; }
+    // wheel = zoom · Shift+wheel = scroll sideways · Alt+wheel = scroll up/down · touchpad sideways swipe scrolls
+    if (e.altKey) { view.oy -= e.deltaY; needsDraw = true; }
+    else if (e.shiftKey && !e.ctrlKey && !e.metaKey) { view.ox -= e.deltaY || e.deltaX; needsDraw = true; }
+    else if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) { view.ox -= e.deltaX; needsDraw = true; }
+    else zoomAt(Math.exp(-e.deltaY * 0.0015), p.sx, p.sy);
   }, { passive: false });
 
   stage.addEventListener('pointerdown', (e) => {
@@ -930,6 +1030,14 @@
       if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); return; }
       if (k === 'd') { e.preventDefault(); duplicateSelection(); return; }
       if (k === 'a') { e.preventDefault(); selectAll(); return; }
+      if (k === 'c') { e.preventDefault(); copySelection(); return; }
+      if (k === 'x') { e.preventDefault(); copySelection(true); return; }
+      if (k === 'v') { e.preventDefault(); pasteClipboard(); return; }
+    }
+    if (typing && (e.ctrlKey || e.metaKey) && api && api.isMac) {
+      // macOS: clipboard keys in text boxes are normally provided by the app menu
+      const k = e.key.toLowerCase(), act = { c: 'copy', x: 'cut', v: 'paste', a: 'selectAll', z: e.shiftKey ? 'redo' : 'undo' }[k];
+      if (act) { e.preventDefault(); api.nativeEdit(act); return; }
     }
     if (typing) return;
     if (e.key === ' ') { spaceDown = true; stage.style.cursor = 'grab'; e.preventDefault(); return; }
@@ -1180,6 +1288,7 @@
         ${propRow('Type', `<select id="pType">${Object.entries(MAP_TYPES).map(([k, v]) => `<option value="${k}" ${k === doc.type ? 'selected' : ''}>${v.label}</option>`).join('')}</select>`)}
         <div class="row"><label>Size</label><span>${doc.width} × ${doc.height}px</span><button class="mini" data-cmd="resize">Change…</button></div>
         <div class="btnrow"><button class="mini" id="pAllLand">Fill with land</button><button class="mini" id="pAllSea">Clear all land</button><button class="mini" id="pClearPaths">Clear ground paint</button></div>
+        ${clipboard ? `<div class="btnrow"><button class="mini" id="pPasteMap">Paste ${clipboard.objs.length} copied item${clipboard.objs.length === 1 ? '' : 's'}</button></div>` : ''}
         <div class="panel-sub muted">Grid</div>
         ${propRow('Grid', `<select id="pGrid"><option value="none">None</option><option value="square" ${g.type === 'square' ? 'selected' : ''}>Square</option><option value="hex" ${g.type === 'hex' ? 'selected' : ''}>Hex</option></select>`)}
         ${propRow('Cell size', `<input type="number" id="pGridSize" min="10" max="500" value="${g.size}"> px`)}
@@ -1189,6 +1298,7 @@
       $('#pType').onchange = (e) => { doc.type = e.target.value; ui.kind = MAP_TYPES[doc.type].kind; baseDirty = true; buildLibrary(); commit(); needsDraw = true; };
       $('#pAllLand').onclick = () => { fillMask(landMask, true); baseDirty = true; commit(); needsDraw = true; };
       $('#pAllSea').onclick = () => { fillMask(landMask, false); baseDirty = true; commit(); needsDraw = true; };
+      $('#pPasteMap') && ($('#pPasteMap').onclick = pasteClipboard);
       $('#pClearPaths').onclick = () => { fillMask(pathMask, false); baseDirty = true; commit(); needsDraw = true; };
       $('#pGrid').onchange = (e) => { doc.grid.type = e.target.value; $('#gridToggle').checked = doc.grid.type !== 'none'; commit(); needsDraw = true; };
       $('#pGridSize').onchange = (e) => { doc.grid.size = clamp(+e.target.value || 70, 10, 500); commit(); needsDraw = true; };
@@ -1202,7 +1312,8 @@
     if (sel.length > 1) {
       el.innerHTML = `<p><b>${sel.length}</b> objects selected</p>
         <div class="btnrow"><button id="mScaleDn">Smaller</button><button id="mScaleUp">Larger</button><button id="mFlip">Flip</button><button id="mRandRot">Random tilt</button></div>
-        <div class="btnrow"><button id="mFront">To front</button><button id="mBack">To back</button><button id="mDup">Duplicate</button><button class="danger" id="mDel">Delete ${sel.length}</button></div>`;
+        <div class="btnrow"><button id="mFront">To front</button><button id="mBack">To back</button><button id="mDup">Duplicate</button><button class="danger" id="mDel">Delete ${sel.length}</button></div>
+        <div class="btnrow"><button id="mCopy">Copy</button><button id="mCut">Cut</button><button id="mPaste" ${clipboard ? '' : 'disabled'}>Paste</button></div>`;
       const each = (fn) => { sel.forEach(fn); commit(); needsDraw = true; };
       $('#mScaleDn').onclick = () => each((o) => { if (o.t !== 'line') o.s = clamp(o.s * 0.9, 0.05, 20); });
       $('#mScaleUp').onclick = () => each((o) => { if (o.t !== 'line') o.s = clamp(o.s * 1.1, 0.05, 20); });
@@ -1210,6 +1321,7 @@
       $('#mRandRot').onclick = () => each((o) => { if (o.t !== 'line') o.r = Math.round((Math.random() * 2 - 1) * 12); });
       $('#mFront').onclick = () => reorder('front'); $('#mBack').onclick = () => reorder('back');
       $('#mDup').onclick = duplicateSelection;
+      $('#mCopy').onclick = () => copySelection(); $('#mCut').onclick = () => copySelection(true); $('#mPaste').onclick = pasteClipboard;
       $('#mDel').onclick = () => { deleteIds(sel.map((o) => o.id)); commit(); refreshPanels(); needsDraw = true; };
       return;
     }
@@ -1237,6 +1349,7 @@
     }
     h += propRow('Opacity', `<input type="range" id="pO" min="0.05" max="1" step="0.05" value="${o.o ?? 1}">`);
     h += `<div class="btnrow">${o.t === 'asset' ? '<button id="pFlip">Flip ⇋</button>' : ''}<button id="pFront">Front</button><button id="pUp">▲</button><button id="pDown">▼</button><button id="pBack">Back</button></div>`;
+    h += `<div class="btnrow"><button id="pCopy" title="Ctrl+C">Copy</button><button id="pCut" title="Ctrl+X">Cut</button><button id="pPaste" title="Ctrl+V" ${clipboard ? '' : 'disabled'}>Paste</button></div>`;
     h += `<div class="btnrow"><button id="pDup">Duplicate</button><button class="danger" id="pDel">Delete</button></div>`;
     el.innerHTML = h;
 
@@ -1257,6 +1370,7 @@
     $('#pFront').onclick = () => reorder('front'); $('#pBack').onclick = () => reorder('back');
     $('#pUp').onclick = () => reorder('up'); $('#pDown').onclick = () => reorder('down');
     $('#pDup').onclick = duplicateSelection;
+    $('#pCopy').onclick = () => copySelection(); $('#pCut').onclick = () => copySelection(true); $('#pPaste').onclick = pasteClipboard;
     $('#pDel').onclick = () => { deleteIds([o.id]); commit(); refreshPanels(); needsDraw = true; };
     $('#pSelSame') && ($('#pSelSame').onclick = () => { selection.clear(); doc.objects.forEach((q) => q.t === 'asset' && q.a === o.a && selection.add(q.id)); refreshPanels(); needsDraw = true; });
   }
@@ -1458,7 +1572,7 @@
       <div class="actions"><button class="primary" id="cOk">Close</button></div>`, (d) => { d.querySelector('#cOk').onclick = closeDialog; });
   }
   function shortcutsDialog() {
-    const rows = [['V / S / B / E / P / L / T / H', 'Select · Stamp · Land brush · Ocean brush · Ground · Lines · Text · Pan'], ['Space + drag, middle mouse', 'Pan'], ['Mouse wheel', 'Zoom'], ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+D', 'Duplicate'], ['Alt + drag', 'Duplicate while moving'], ['Delete', 'Delete selection'], ['R / Shift+R', 'Rotate ±15°'], ['F', 'Flip asset'], ['Click land (Select tool, Land layer)', 'Select a whole landmass to move, resize or rotate'], ['1 / 2 / 3', 'Make Land / Assets / Text the active layer'], ['[ / ]', 'Brush size, or scale selection'], ['Arrows (+Shift)', 'Nudge 1px (10px)'], ['Shift while rotating', 'Snap to 15°'], ['Alt while painting', 'Swap Land ↔ Ocean brush']];
+    const rows = [['V / S / B / E / P / L / T / H', 'Select · Stamp · Land brush · Ocean brush · Ground · Lines · Text · Pan'], ['Space + drag, middle mouse', 'Pan'], ['Mouse wheel', 'Zoom'], ['Shift+wheel / Alt+wheel', 'Scroll sideways / up and down (or drag the scroll bars)'], ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / Cut / Paste (pastes at the mouse, same size and rotation)'], ['Ctrl+D', 'Duplicate'], ['Alt + drag', 'Duplicate while moving'], ['Delete', 'Delete selection'], ['R / Shift+R', 'Rotate ±15°'], ['F', 'Flip asset'], ['Click land (Select tool, Land layer)', 'Select a whole landmass to move, resize or rotate'], ['1 / 2 / 3', 'Make Land / Assets / Text the active layer'], ['[ / ]', 'Brush size, or scale selection'], ['Arrows (+Shift)', 'Nudge 1px (10px)'], ['Shift while rotating', 'Snap to 15°'], ['Alt while painting', 'Swap Land ↔ Ocean brush']];
     openDialog(`<h2>Keyboard shortcuts</h2><table>${rows.map(([k, v]) => `<tr><td><kbd>${k}</kbd></td><td>${v}</td></tr>`).join('')}</table><div class="actions"><button class="primary" id="kOk">Close</button></div>`, (d) => { d.querySelector('#kOk').onclick = closeDialog; });
   }
 
@@ -1521,11 +1635,14 @@
   const COMMANDS = {
     new: newWithConfirm, open, save: () => save(false), saveAs: () => save(true),
     exportPng: () => exportDialog('png'), exportJpg: () => exportDialog('jpg'),
-    undo, redo, duplicate: duplicateSelection, selectAll, resize: resizeDialog,
+    undo: () => typingNow() ? api?.nativeEdit('undo') : undo(), redo: () => typingNow() ? api?.nativeEdit('redo') : redo(),
+    copy: () => typingNow() ? api?.nativeEdit('copy') : copySelection(), cut: () => typingNow() ? api?.nativeEdit('cut') : copySelection(true), paste: () => typingNow() ? api?.nativeEdit('paste') : pasteClipboard(),
+    duplicate: duplicateSelection, selectAll: () => typingNow() ? api?.nativeEdit('selectAll') : selectAll(), resize: resizeDialog,
     zoomIn: () => { const r = stage.getBoundingClientRect(); zoomAt(1.25, r.width / 2, r.height / 2); },
     zoomOut: () => { const r = stage.getBoundingClientRect(); zoomAt(0.8, r.width / 2, r.height / 2); },
     zoomFit, importAsset: importAssets, credits: creditsDialog, shortcuts: shortcutsDialog
   };
+  function typingNow() { return /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) && document.activeElement.type !== 'range' && document.activeElement.type !== 'checkbox'; }
   function bindCmdButtons(root) { root.querySelectorAll('[data-cmd]').forEach((b) => b.onclick = () => COMMANDS[b.dataset.cmd]?.()); }
   bindCmdButtons(document);
   if (api) api.onMenu((cmd) => COMMANDS[cmd]?.());
@@ -1669,6 +1786,13 @@
     const rotated = Math.round(castle.r);
     const before = doc.objects.length; undo(); const afterUndo = Math.round(findObj(castle.id)?.r); redo(); const afterRedo = Math.round(findObj(castle.id)?.r);
     await wait(1500); await whenImagesReady(); await shot('08-interactions');
+    // copy / paste keeps size + rotation, pastes at the mouse, and repeated pastes don't stack exactly
+    const cSrc = findObj([...selection][0]);
+    copySelection(); hoverPt = { x: 400, y: 300 }; pasteClipboard();
+    const cP1 = findObj([...selection][0]);
+    pasteClipboard(); const cP2 = findObj([...selection][0]);
+    hoverPt = null; copySelection(true); const cutGone = !findObj(cP2.id); pasteClipboard(); const cP3 = findObj([...selection][0]);
+    window.__clip = `copy=${cSrc.a}/${cSrc.s.toFixed(2)}/${Math.round(cSrc.r)} paste=${cP1.a}/${cP1.s.toFixed(2)}/${Math.round(cP1.r)}@${Math.round(cP1.x)},${Math.round(cP1.y)} again@${Math.round(cP2.x)},${Math.round(cP2.y)} cutGone=${cutGone} cutPaste=${cP3 ? cP3.a : 'none'}`;
     const pineCount = doc.objects.filter((o) => o.a === 'pine').length;
     setActiveLayer('assets');
     // landmass selection: pick the island, scale it up 1.5x, check land area and items followed
@@ -1698,7 +1822,7 @@
     doc.layers.text.visible = true; doc.layers.water.visible = true; baseDirty = true; renderLayers();
     window.__land += ` landUnderAsset=${landUnderAsset} assetOnAssets=${assetOnAssets} lockedBlocks=${lockedBlocks}`;
     await wait(1500); await shot('10-land-resized');
-    document.title = `TESTDONE ${window.__land} label=${window.__label} landStart=${window.__landStart} objs=${before} pines=${pineCount} rotated=${rotated} undoR=${afterUndo} redoR=${afterRedo} sel=${castle.a} png=${window.__exportPng}`;
+    document.title = `TESTDONE ${window.__clip} ${window.__land} label=${window.__label} landStart=${window.__landStart} objs=${before} pines=${pineCount} rotated=${rotated} undoR=${afterUndo} redoR=${afterRedo} sel=${castle.a} png=${window.__exportPng}`;
   }
   boot();
 })();

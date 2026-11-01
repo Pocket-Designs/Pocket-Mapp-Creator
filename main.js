@@ -57,11 +57,15 @@ function buildMenu() {
     {
       label: 'Edit',
       submenu: [
-        { label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: () => send('undo') },
-        { label: 'Redo', accelerator: 'CmdOrCtrl+Y', click: () => send('redo') },
+        // Shortcuts are shown here but handled in the page, so they still work normally inside text boxes
+        { label: 'Undo', accelerator: 'CmdOrCtrl+Z', registerAccelerator: false, click: () => send('undo') },
+        { label: 'Redo', accelerator: 'CmdOrCtrl+Y', registerAccelerator: false, click: () => send('redo') },
         { type: 'separator' },
-        { label: 'Duplicate', accelerator: 'CmdOrCtrl+D', click: () => send('duplicate') },
-        { label: 'Select All Objects', accelerator: 'CmdOrCtrl+A', click: () => send('selectAll') },
+        { label: 'Cut', accelerator: 'CmdOrCtrl+X', registerAccelerator: false, click: () => send('cut') },
+        { label: 'Copy', accelerator: 'CmdOrCtrl+C', registerAccelerator: false, click: () => send('copy') },
+        { label: 'Paste', accelerator: 'CmdOrCtrl+V', registerAccelerator: false, click: () => send('paste') },
+        { label: 'Duplicate', accelerator: 'CmdOrCtrl+D', registerAccelerator: false, click: () => send('duplicate') },
+        { label: 'Select All Objects', accelerator: 'CmdOrCtrl+A', registerAccelerator: false, click: () => send('selectAll') },
         { label: 'Map Size…', click: () => send('resize') }
       ]
     },
@@ -142,6 +146,14 @@ ipcMain.handle('import-assets', async () => {
       dataUrl: `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`
     };
   });
+});
+
+// Native clipboard/undo actions for text boxes (needed on macOS, where these normally come from the Edit menu)
+ipcMain.handle('native-edit', (_e, action) => {
+  const wc = win && win.webContents; if (!wc) return false;
+  const fns = { copy: () => wc.copy(), cut: () => wc.cut(), paste: () => wc.paste(), selectAll: () => wc.selectAll(), undo: () => wc.undo(), redo: () => wc.redo() };
+  if (fns[action]) fns[action]();
+  return true;
 });
 
 ipcMain.handle('confirm', async (_e, { message, detail }) => {

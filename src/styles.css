@@ -83,7 +83,7 @@ label { color: var(--muted); }
 #toolOptions:empty { display: none; }
 #toolOptions label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 #toolOptions input[type=range] { width: 110px; }
-#status { position: absolute; left: 10px; bottom: 8px; color: var(--muted); font-size: 12px; background: rgba(21,18,15,.75); padding: 3px 8px; border-radius: 5px; pointer-events: none; }
+#status { position: absolute; left: 10px; bottom: 24px; color: var(--muted); font-size: 12px; background: rgba(21,18,15,.75); padding: 3px 8px; border-radius: 5px; pointer-events: none; }
 
 /* right panel */
 #props { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--line); max-height: 52%; overflow-y: auto; }
@@ -149,3 +149,15 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 /* asset tiles: fixed row height so a long library scrolls instead of squashing tiles */
 #assetGrid, #customGrid { grid-auto-rows: 92px; }
 .asset { aspect-ratio: auto; height: 92px; }
+button:disabled { opacity: .4; cursor: default; }
+button:disabled:hover { border-color: var(--line); }
+
+/* map scroll bars */
+.sbar { position: absolute; background: rgba(21,18,15,.85); z-index: 2; }
+.sbar.h { left: 0; right: 14px; bottom: 0; height: 14px; border-top: 1px solid var(--line); }
+.sbar.v { top: 0; bottom: 14px; right: 0; width: 14px; border-left: 1px solid var(--line); }
+.sbar-corner { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; background: rgba(21,18,15,.85); border-top: 1px solid var(--line); border-left: 1px solid var(--line); z-index: 2; }
+.sbar .thumb { position: absolute; background: #5a4a38; border-radius: 6px; cursor: default; }
+.sbar.h .thumb { top: 3px; height: 8px; }
+.sbar.v .thumb { left: 3px; width: 8px; }
+.sbar .thumb:hover, .sbar .thumb.drag { background: var(--accent2); }

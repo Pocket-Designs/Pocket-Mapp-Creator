@@ -22,7 +22,9 @@ Includes ships (galleon, longship, merchant ship, rowing boat, cargo ship), dock
 
 **Editing**
 - Adjustable map size (presets or custom up to 8000 × 8000) — resize later by extending/cropping or by scaling everything
+- **Scroll bars** along the bottom and right of the map area: drag them, or click the track to jump a page. The mouse wheel zooms; Shift+wheel scrolls sideways and Alt+wheel scrolls up and down
 - Every asset can be moved, **rotated** (handle, R key, or slider) and **scaled** (corner handles, [ ] keys, or slider), flipped, layered, faded
+- **Copy, Cut & Paste** (Ctrl+C / Ctrl+X / Ctrl+V, the Edit menu, or the buttons in Properties): copies keep their exact size, rotation, flip and opacity, and are pasted where your mouse pointer is. This works for one item or a whole group, and for text and lines too, including between maps
 - **Scatter brush** to paint whole forests or mountain ranges with random size, rotation and flip
 - Every new map starts as **open ocean**. Paint land in any shape with the **Land brush** (B), and turn land back into sea with the **Ocean brush** (E). Coastlines are inked automatically. The **Ground brush** paints roads, dirt and clearings
 - **Layers**: 1 **Water** (base), 2 **Land**, 3 **Assets** (mountains, towns, ships, rivers and roads), 4 **Text** (always on top). Each layer can be hidden or locked, and hidden layers are left out of exports. The Select tool only picks things on the **active** layer. Click a layer in the Layers panel, or press 1 for Land, 2 for Assets, 3 for Text. Drawing tools switch to their own layer automatically.
@@ -92,7 +94,9 @@ npm run assets
 | V S B E P L T H | Select · Stamp · Land brush · Ocean brush · Ground · Lines · Text · Pan |
 | Space + drag / middle mouse | Pan |
 | Wheel | Zoom |
+| Scroll bars, Shift+wheel / Alt+wheel | Scroll sideways / up and down |
 | Ctrl+Z / Ctrl+Y | Undo / Redo |
+| Ctrl+C / Ctrl+X / Ctrl+V | Copy / Cut / Paste (pastes at the mouse, same size) |
 | Ctrl+D, Alt+drag | Duplicate |
 | Delete | Delete selection |
 | R / Shift+R | Rotate ±15° (Shift while dragging the handle snaps to 15°) |
