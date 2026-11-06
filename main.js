@@ -23,6 +23,14 @@ function createWindow() {
     }
   });
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
+  win.webContents.on('will-prevent-unload', (e) => {
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'question', buttons: ['Close without saving', 'Cancel'], defaultId: 1, cancelId: 1,
+      message: 'This map has unsaved changes.',
+      detail: 'A copy is kept automatically and offered next time you start Pocket-Mapp-Creator, but saving is safer.'
+    });
+    if (choice === 0) e.preventDefault();   // preventDefault here lets the window close
+  });
   buildMenu();
   if (process.env.MAPP_TEST) {
     win.webContents.on('console-message', (e) => console.log('[renderer]', e.message || ''));
@@ -83,6 +91,8 @@ function buildMenu() {
     {
       label: 'Help',
       submenu: [
+        { label: 'User Guide', accelerator: 'F1', click: () => openGuide() },
+        { type: 'separator' },
         { label: 'Asset & Font Licences', click: () => send('credits') },
         { label: 'Keyboard Shortcuts', click: () => send('shortcuts') },
         { label: 'Find More Free Assets (Kenney.nl, CC0)', click: () => shell.openExternal('https://kenney.nl/assets') },
@@ -94,6 +104,31 @@ function buildMenu() {
 }
 
 // ---------- IPC: file dialogs ----------
+// ---------- User Guide window (a separate window so it can sit beside the map)
+let guideWin = null;
+function openGuide(section) {
+  if (guideWin && !guideWin.isDestroyed()) {
+    if (section) guideWin.webContents.executeJavaScript(`location.hash = ${JSON.stringify('#' + section)}`).catch(() => {});
+    guideWin.show(); guideWin.focus(); return;
+  }
+  guideWin = new BrowserWindow({
+    width: 1080, height: 860, minWidth: 640, minHeight: 480,
+    title: 'Pocket-Mapp-Creator — User Guide',
+    backgroundColor: '#1d1915',
+    icon: path.join(__dirname, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
+    autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
+  guideWin.setMenu(null);
+  guideWin.loadFile(path.join(__dirname, 'src', 'guide', 'index.html'), section ? { hash: section } : undefined);
+  // web links in the guide open in the normal browser, never inside the app
+  guideWin.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
+  guideWin.webContents.on('will-navigate', (e, url) => { if (/^https?:/i.test(url)) { e.preventDefault(); shell.openExternal(url); } });
+  guideWin.webContents.on('before-input-event', (_e, input) => { if (input.type === 'keyDown' && input.key === 'Escape' && !input.alt) guideWin.close(); });
+  guideWin.on('closed', () => { guideWin = null; });
+}
+ipcMain.handle('open-guide', (_e, section) => { openGuide(section); return true; });
+
 ipcMain.handle('save-project', async (_e, { data, filePath }) => {
   let target = filePath;
   if (!target) {
@@ -120,16 +155,34 @@ ipcMain.handle('open-project', async () => {
 });
 
 ipcMain.handle('export-image', async (_e, { dataUrl, ext }) => {
+  if (process.env.MAPP_TEST) {   // automated tests: no dialog
+    const out = path.join(process.env.MAPP_TEST, `export-test.${ext}`);
+    fs.writeFileSync(out, typeof dataUrl === 'string' ? Buffer.from(dataUrl.split(',')[1], 'base64') : Buffer.from(dataUrl));
+    return out;
+  }
   const r = await dialog.showSaveDialog(win, {
     title: 'Export Map',
     defaultPath: `my-map.${ext}`,
     filters: [{ name: ext.toUpperCase(), extensions: [ext] }]
   });
   if (r.canceled || !r.filePath) return null;
-  const b64 = dataUrl.split(',')[1];
-  fs.writeFileSync(r.filePath, Buffer.from(b64, 'base64'));
+  // large exports arrive as raw bytes; older callers send a data: URL
+  const buf = typeof dataUrl === 'string' ? Buffer.from(dataUrl.split(',')[1], 'base64') : Buffer.from(dataUrl);
+  fs.writeFileSync(r.filePath, buf);
   return r.filePath;
 });
+
+// ---------- autosave: a copy of the open map, written every minute while there are unsaved changes
+const autosavePath = () => path.join(app.getPath('userData'), 'autosave.mapp');
+ipcMain.handle('autosave-write', (_e, data) => { try { fs.writeFileSync(autosavePath(), data, 'utf8'); return true; } catch (_) { return false; } });
+ipcMain.handle('autosave-read', () => {
+  try {
+    const p = autosavePath(); if (!fs.existsSync(p)) return null;
+    const st = fs.statSync(p);
+    return { data: fs.readFileSync(p, 'utf8'), when: st.mtime.toLocaleString() };
+  } catch (_) { return null; }
+});
+ipcMain.handle('autosave-clear', () => { try { fs.rmSync(autosavePath(), { force: true }); } catch (_) {} return true; });
 
 ipcMain.handle('import-assets', async () => {
   const r = await dialog.showOpenDialog(win, {

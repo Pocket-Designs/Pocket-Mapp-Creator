@@ -926,6 +926,207 @@ add('speedboat-top', 'Speedboat (top-down)', 'modern', 'battle', (k) => {
   const { c } = k; return `<path d="M36 4 Q64 40 62 90 L60 120 L12 120 L10 90 Q8 40 36 4 Z" fill="${c.white}" stroke="${c.ink}" stroke-width="${k.sw}" stroke-linejoin="round"/>` + k.srect(18, 48, 36, 12, c.glass, { rx: 4, w: 0.6 }) + k.srect(18, 70, 36, 30, c.accent, { rx: 4, w: 0.6 }) + k.srect(26, 116, 20, 8, c.dark, { w: 0.5 });
 }, 72, 128);
 
+// ======== INTERIORS, DUNGEONS & CITIES (added 2026-11) ========
+// --- inn & tavern interiors (top-down, battle maps)
+add('fireplace', 'Fireplace', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(8, 8, 112, 30, c.stoneD);
+  s += k.poly([[18, 38], [110, 38], [100, 92], [64, 104], [28, 92]], c.stone);
+  s += k.poly([[34, 40], [94, 40], [86, 80], [64, 88], [42, 80]], c.dark, { w: 0.7 });
+  s += k.poly([[64, 46], [78, 62], [74, 80], [64, 84], [54, 80], [50, 62]], c.fire, { w: 0.6 }) + k.poly([[64, 58], [70, 68], [64, 78], [58, 68]], c.glow, { w: 0.4 });
+  s += k.line([[46, 76], [82, 70]], { w: 1.4, stroke: c.woodD });
+  for (let x = 14; x < 120; x += 16) s += k.line([[x, 10], [x, 36]], { w: 0.35 });
+  return s;
+});
+add('bar-counter', 'Bar Counter', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(8, 22, 240, 34, c.wood) + k.rect(8, 22, 240, 8, c.woodD, { w: 0.6 });
+  for (let x = 28; x < 240; x += 34) s += k.circ(x, 42, 6, c.metal, { w: 0.5 }) + k.circ(x, 42, 3.5, c.glow, { w: 0.3 });
+  for (let x = 30; x < 240; x += 40) s += k.circ(x, 84, 10, c.woodD, { w: 0.7 }) + k.circ(x, 84, 5, c.wood, { w: 0.4 });
+  s += k.rect(8, 100, 70, 22, c.woodD, { w: 0.6 }) + k.circ(26, 111, 8, c.wood, { w: 0.5 }) + k.circ(52, 111, 8, c.wood, { w: 0.5 });
+  return s;
+}, 256, 128);
+add('tavern-table', 'Tavern Table & Stools', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = '';
+  for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + (i * Math.PI) / 2; s += k.circ(64 + Math.cos(a) * 48, 64 + Math.sin(a) * 48, 11, c.woodD, { w: 0.7 }); }
+  s += k.circ(64, 64, 34, c.wood);
+  for (let r = 10; r < 34; r += 8) s += k.circ(64, 64, r, 'none', { w: 0.3 });
+  s += k.circ(54, 56, 6, c.metal, { w: 0.5 }) + k.circ(54, 56, 3.5, c.glow, { w: 0.3 }) + k.circ(76, 70, 6, c.metal, { w: 0.5 }) + k.circ(76, 70, 3.5, c.glow, { w: 0.3 }) + k.ell(62, 78, 9, 5, c.plaster, { w: 0.5 });
+  return s;
+});
+add('long-table', 'Long Feast Table', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(14, 22, 228, 10, c.woodD, { w: 0.6 }) + k.rect(14, 96, 228, 10, c.woodD, { w: 0.6 });
+  s += k.rect(10, 38, 236, 52, c.wood);
+  for (let y = 48; y < 90; y += 12) s += k.line([[12, y], [244, y]], { w: 0.35 });
+  for (let x = 30; x < 240; x += 36) s += k.circ(x, 52, 6, c.plaster, { w: 0.5 }) + k.circ(x + 14, 76, 5, c.metal, { w: 0.5 });
+  s += k.ell(128, 64, 22, 10, c.fire, { w: 0.6 });
+  return s;
+}, 256, 128);
+add('bard-stage', 'Bard Stage', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(10, 10, 108, 80, c.wood);
+  for (let x = 22; x < 118; x += 12) s += k.line([[x, 12], [x, 88]], { w: 0.35 });
+  s += k.rect(34, 90, 60, 12, c.woodD, { w: 0.7 }) + k.rect(40, 102, 48, 12, c.woodD, { w: 0.7 });
+  s += k.circ(40, 40, 10, c.accent, { w: 0.6 }) + k.circ(40, 40, 6, c.banner, { w: 0.4 });
+  s += k.ell(80, 46, 12, 8, c.woodD, { w: 0.6 }) + k.line([[90, 44], [108, 30]], { w: 0.9 }) + k.circ(64, 30, 6, c.plaster, { w: 0.6 });
+  return s;
+});
+add('bookshelf', 'Bookshelf', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(8, 40, 112, 30, c.woodD);
+  const cols = [c.accent, c.leafD, c.water, c.purple, c.roof, c.glow];
+  for (let x = 12, i = 0; x < 116; i++) { const w = 5 + (i * 7) % 6; s += k.rect(x, 44, w, 22, cols[i % cols.length], { w: 0.35 }); x += w + 1; }
+  return s;
+}, 128, 100);
+add('weapon-rack', 'Weapon Rack', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(10, 50, 108, 14, c.woodD);
+  for (let i = 0; i < 5; i++) { const x = 22 + i * 21; s += k.line([[x, 20], [x, 94]], { w: 1.1, stroke: c.metalD }) + k.poly([[x - 4, 20], [x, 8], [x + 4, 20]], c.metal, { w: 0.5 }); }
+  s += k.circ(22, 102, 8, c.metal, { w: 0.6 }) + k.circ(106, 102, 8, c.metal, { w: 0.6 });
+  return s;
+}, 128, 120);
+add('stairs', 'Stairs', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(30, 6, 68, 116, c.stone);
+  for (let i = 0; i < 9; i++) { const y = 12 + i * 12; s += k.rect(30, y, 68, 12, i % 2 ? c.stone : c.stoneD, { w: 0.4, op: 0.4 + i * 0.06 }); s += k.line([[30, y], [98, y]], { w: 0.5 }); }
+  s += k.line([[64, 100], [64, 22]], { w: 0.9 }) + k.poly([[56, 30], [64, 18], [72, 30]], c.ink, { w: 0.4 });
+  return s;
+});
+add('trapdoor', 'Trapdoor', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(26, 26, 76, 76, c.woodD);
+  for (let x = 38; x < 102; x += 13) s += k.line([[x, 28], [x, 100]], { w: 0.4 });
+  s += k.rect(26, 40, 76, 6, c.metalD, { w: 0.4 }) + k.rect(26, 82, 76, 6, c.metalD, { w: 0.4 }) + k.circ(64, 64, 7, 'none', { w: 0.8, stroke: c.metal });
+  return s;
+});
+add('secret-door', 'Secret Door', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(4, 48, 120, 32, c.stone);
+  for (let x = 4; x < 124; x += 20) if (x < 40 || x > 88) s += k.line([[x, 50], [x, 78]], { w: 0.35 });
+  s += k.rect(40, 50, 48, 28, 'none', { w: 0.6 });
+  s += `<text x="64" y="72" text-anchor="middle" font-family="serif" font-weight="bold" font-size="22" fill="${c.ink}">S</text>`;
+  return s;
+});
+add('hay-bale', 'Hay Bales', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = '';
+  for (const [x, y, r] of [[18, 30, 0], [62, 42, 12], [34, 78, -8]]) { s += `<g transform="rotate(${r} ${x + 22} ${y + 14})">` + k.rect(x, y, 46, 28, c.sand) + k.hatch(x + 4, y + 4, x + 42, y + 4, 9, 0, 20, { force: true }) + k.line([[x + 15, y], [x + 15, y + 28]], { w: 0.5, stroke: c.woodD }) + k.line([[x + 31, y], [x + 31, y + 28]], { w: 0.5, stroke: c.woodD }) + '</g>'; }
+  return s;
+});
+add('stable-stall', 'Stable Stall', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(8, 8, 112, 112, c.sand, { w: 0.5 });
+  s += k.hatch(14, 20, 110, 110, 14, 6, -10, { force: true });
+  s += k.rect(4, 4, 120, 8, c.woodD) + k.rect(4, 4, 8, 120, c.woodD) + k.rect(116, 4, 8, 120, c.woodD);
+  s += k.rect(80, 16, 28, 16, c.wood, { w: 0.6 }) + k.ell(30, 30, 10, 7, c.metal, { w: 0.5 });
+  return s;
+});
+add('cauldron', 'Cauldron', 'fantasy', 'battle', (k) => {
+  const { c } = k; return k.circ(64, 64, 40, c.dark) + k.circ(64, 64, 32, c.leaf, { w: 0.6 }) + k.circ(54, 56, 6, c.leafD, { w: 0.4, op: 0.7 }) + k.circ(74, 72, 4, c.leafD, { w: 0.4, op: 0.7 }) + k.circ(20, 64, 5, c.dark, { w: 0.5 }) + k.circ(108, 64, 5, c.dark, { w: 0.5 });
+});
+// --- dungeons
+add('spike-pit', 'Spike Pit', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(16, 16, 96, 96, c.stoneD) + k.rect(24, 24, 80, 80, c.dark, { w: 0.6 });
+  for (let y = 34; y < 100; y += 16) for (let x = 34 + ((y / 16) % 2) * 8; x < 100; x += 16) s += k.poly([[x - 5, y + 5], [x, y - 6], [x + 5, y + 5]], c.metal, { w: 0.4 });
+  return s;
+});
+add('prison-bars', 'Prison Bars', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(4, 56, 12, 16, c.stoneD) + k.rect(112, 56, 12, 16, c.stoneD);
+  for (let x = 22; x < 110; x += 11) s += k.circ(x, 64, 3.2, c.metalD, { w: 0.5 });
+  s += k.line([[16, 64], [112, 64]], { w: 0.6, stroke: c.metalD });
+  return s;
+});
+add('altar', 'Altar', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(14, 34, 100, 60, c.stone) + k.rect(22, 42, 84, 44, c.plaster, { w: 0.5 });
+  s += k.ell(64, 64, 14, 10, c.accent, { w: 0.5, op: 0.8 });
+  for (const [x, y] of [[30, 48], [98, 48], [30, 80], [98, 80]]) s += k.circ(x, y, 4, c.white, { w: 0.4 }) + `<circle cx="${x}" cy="${y}" r="9" fill="${c.glow}" opacity="0.35"/>`;
+  return s;
+});
+add('sarcophagus', 'Sarcophagus', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.poly([[44, 8], [84, 8], [100, 34], [92, 120], [36, 120], [28, 34]], c.stone);
+  s += k.poly([[50, 18], [78, 18], [88, 38], [82, 110], [46, 110], [40, 38]], c.stoneD, { w: 0.5, op: 0.6 });
+  s += k.line([[64, 30], [64, 96]], { w: 0.7 }) + k.line([[50, 50], [78, 50]], { w: 0.7 });
+  return s;
+});
+add('wall-torch', 'Wall Torch', 'fantasy', 'battle', (k) => {
+  const { c } = k; return `<circle cx="64" cy="70" r="46" fill="${c.glow}" opacity="0.3"/>` + k.rect(52, 20, 24, 10, c.stoneD, { w: 0.6 }) + k.line([[64, 30], [64, 62]], { w: 1.6, stroke: c.woodD }) + k.poly([[64, 54], [74, 70], [70, 86], [64, 90], [58, 86], [54, 70]], c.fire, { w: 0.5 }) + k.poly([[64, 66], [68, 76], [64, 84], [60, 76]], c.glow, { w: 0.3 });
+});
+add('cobweb', 'Cobweb', 'fantasy', 'battle', (k) => {
+  let s = ''; const o = [8, 8];
+  for (let i = 0; i <= 6; i++) { const a = (i / 6) * (Math.PI / 2); s += k.line([o, [8 + Math.cos(a) * 112, 8 + Math.sin(a) * 112]], { w: 0.5 }); }
+  for (let r = 22; r < 112; r += 18) { const pts = []; for (let i = 0; i <= 6; i++) { const a = (i / 6) * (Math.PI / 2); const rr = r * (i % 2 ? 0.9 : 1); pts.push([8 + Math.cos(a) * rr, 8 + Math.sin(a) * rr]); } s += k.line(pts, { w: 0.4 }); }
+  return s;
+});
+add('rubble', 'Rubble', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = ''; const r = k.r;
+  for (let i = 0; i < 18; i++) { const x = 14 + r() * 100, y = 14 + r() * 100, z = 3 + r() * 9; s += k.poly([[x - z, y], [x - z * 0.3, y - z], [x + z, y - z * 0.4], [x + z * 0.6, y + z * 0.8]], i % 3 ? c.stone : c.stoneD, { w: 0.4 }); }
+  return s;
+});
+add('treasure-pile', 'Treasure Pile', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = `<circle cx="64" cy="64" r="50" fill="${c.glow}" opacity="0.25"/>` + k.ell(64, 70, 44, 32, c.glow); const r = k.r;
+  for (let i = 0; i < 26; i++) { const a = r() * 6.28, d = Math.sqrt(r()) * 36; s += k.circ(64 + Math.cos(a) * d, 70 + Math.sin(a) * d * 0.7, 4.5, c.glow, { w: 0.4 }); }
+  s += k.rect(50, 34, 26, 18, c.woodD, { w: 0.6 }) + k.circ(84, 50, 6, c.accent, { w: 0.4 }) + k.circ(44, 82, 5, c.water, { w: 0.4 });
+  return s;
+});
+add('giant-spider', 'Giant Spider', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = '';
+  for (let i = 0; i < 4; i++) for (const side of [-1, 1]) { const y = 46 + i * 12; s += k.line([[64 + side * 12, y], [64 + side * 38, y - 14 + i * 6], [64 + side * 54, y + 6 + i * 6]], { w: 1.2 }); }
+  s += k.ell(64, 80, 20, 26, c.dark) + k.circ(64, 46, 13, c.dark) + k.circ(59, 40, 2, c.accent, { w: 0 }) + k.circ(69, 40, 2, c.accent, { w: 0 });
+  return s;
+});
+// --- city maps from above (top-down)
+add('house-top', 'House Roof (top-down)', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(16, 24, 96, 80, c.roof);
+  s += k.fillOnly([[16, 64], [112, 64], [112, 104], [16, 104]], c.roofD, { op: 0.55 }) + k.line([[16, 64], [112, 64]], { w: 0.9 });
+  for (let x = 28; x < 112; x += 12) s += k.line([[x, 26], [x, 62]], { w: 0.3 }) + k.line([[x, 66], [x, 102]], { w: 0.3 });
+  s += k.rect(86, 34, 12, 12, c.stoneD, { w: 0.5 });
+  return s;
+});
+add('city-block-top', 'City Block (top-down)', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.rect(4, 4, 248, 184, c.road, { w: 0.6 }); const r = k.r;
+  const rows = [[10, 10, 236, 52], [10, 130, 236, 52]];
+  for (const [x0, y0, w, h] of rows) {
+    let x = x0; while (x < x0 + w - 20) { const bw = 28 + Math.floor(r() * 26); const ww = Math.min(bw, x0 + w - x); s += k.rect(x, y0, ww, h, r() < 0.5 ? c.roof : c.roofD, { w: 0.8 }) + k.line([[x, y0 + h / 2], [x + ww, y0 + h / 2]], { w: 0.4 }); x += ww; }
+  }
+  s += k.rect(70, 70, 116, 52, c.grass, { w: 0.6 }) + k.circ(128, 96, 14, c.water, { w: 0.6 }) + k.circ(128, 96, 5, c.stone, { w: 0.4 });
+  return s;
+}, 256, 192);
+add('round-tower-top', 'Round Tower (top-down)', 'fantasy', 'battle', (k) => {
+  const { c } = k; let s = k.circ(64, 64, 52, c.stone) + k.circ(64, 64, 40, c.stoneD, { w: 0.6 });
+  for (let i = 0; i < 16; i++) { const a = (i / 16) * 6.283; if (i % 2) s += k.rect(64 + Math.cos(a) * 46 - 4, 64 + Math.sin(a) * 46 - 4, 8, 8, c.stone, { w: 0.4 }); }
+  s += k.poly([[64, 30], [96, 64], [64, 98], [32, 64]], c.roof, { w: 0.7 }) + k.line([[64, 30], [64, 98]], { w: 0.4 }) + k.line([[32, 64], [96, 64]], { w: 0.4 });
+  return s;
+});
+add('row-houses', 'Row of Houses (3/4)', 'fantasy', 'town', (k) => {
+  const { c } = k; let s = '';
+  const roofs = [c.roof, c.roofD, c.sand, c.roof, c.stoneD];
+  for (let i = 0; i < 5; i++) s += smallHouse34(k, 6 + i * 46, 120 - (i % 2) * 4, 52, 70 + (i % 3) * 10, roofs[i]);
+  return s;
+}, 248, 128);
+// --- eastern-style city
+add('pagoda', 'Pagoda', 'fantasy', 'town', (k) => {
+  const { c } = k; let s = '';
+  const tiers = [[124, 64, 26], [96, 52, 24], [70, 40, 22], [46, 30, 20]];
+  for (const [base, half, h] of tiers) {
+    s += k.rect(64 - half * 0.62, base - h, half * 1.24, h, c.plaster, { w: 0.8 });
+    s += k.poly([[64 - half - 8, base - h + 2], [64 - half, base - h - 4], [64 + half, base - h - 4], [64 + half + 8, base - h + 2], [64 + half * 0.7, base - h - 12], [64 - half * 0.7, base - h - 12]], c.roofD);
+  }
+  s += k.line([[64, 10], [64, -4]], { w: 0.9 }) + k.circ(64, 2, 3, c.glow, { w: 0.4 });
+  s += k.rect(58, 108, 12, 16, c.accent, { w: 0.5 });
+  return s;
+}, 128, 132);
+add('torii-gate', 'Shrine Gate', 'fantasy', 'town', (k) => {
+  const { c } = k; let s = '';
+  s += k.rect(26, 40, 10, 82, c.accent) + k.rect(92, 40, 10, 82, c.accent);
+  s += k.poly([[6, 30], [64, 22], [122, 30], [124, 22], [64, 12], [4, 22]], c.dark, { w: 0.8 });
+  s += k.rect(16, 46, 96, 8, c.accent, { w: 0.7 }) + k.rect(56, 30, 16, 16, c.dark, { w: 0.5 });
+  return s;
+}, 128, 128);
+add('stone-lantern', 'Stone Lantern', 'fantasy', 'town', (k) => {
+  const { c } = k; let s = k.rect(52, 96, 24, 24, c.stone) + k.rect(58, 70, 12, 26, c.stone, { w: 0.7 });
+  s += k.rect(46, 50, 36, 20, c.stone) + k.rect(54, 54, 20, 12, c.glow, { w: 0.4 });
+  s += k.poly([[34, 50], [64, 28], [94, 50]], c.stoneD) + k.circ(64, 24, 5, c.stone, { w: 0.6 });
+  return s;
+});
+add('eastern-house', 'Curved-Roof House', 'fantasy', 'town', (k) => {
+  const { c } = k; let s = '';
+  s += k.poly([[14, 120], [14, 70], [86, 70], [86, 120]], c.plaster) + k.poly([[86, 120], [116, 108], [116, 60], [86, 70]], c.stone);
+  for (let x = 24; x < 86; x += 16) s += k.line([[x, 74], [x, 118]], { w: 0.4 });
+  s += k.poly([[2, 74], [10, 62], [40, 40], [96, 32], [120, 50], [126, 62], [100, 66], [86, 72]], c.roofD);
+  s += k.rect(42, 92, 18, 28, c.woodD, { w: 0.6 });
+  return s;
+}, 128, 128);
+
 // ---------------------------------------------------------------- write SVG files
 function wrap(style, a, body) {
   const st = STYLES[style];

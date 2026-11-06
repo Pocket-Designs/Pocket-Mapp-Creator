@@ -170,3 +170,16 @@ button:disabled:hover { border-color: var(--line); }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 #toast.warn { border-color: #c4553f; background: #3a221d; }
 #toast.ok { border-color: #6f9a4a; }
+
+.linkbtn { background: none; border: none; color: var(--accent); text-decoration: underline; padding: 5px 2px; }
+.linkbtn:hover { color: #f0c375; }
+
+/* keep the top bar on one line on narrower windows */
+@media (max-width: 1640px) { #topbar .brand .brand-name { display: none; } #topbar { gap: 8px; } #topbar .group { padding-left: 8px; gap: 5px; } }
+@media (max-width: 1400px) { #zoomPreset { display: none; } #topbar .group label:first-child { font-size: 0; } #topbar .group label:first-child select { font-size: 13px; } }
+
+/* fold-out sections in Properties (effects, coastline, map look) */
+details.fxbox { border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: #221c17; }
+details.fxbox summary { cursor: pointer; color: var(--accent); padding: 2px 0; }
+details.fxbox[open] { padding-bottom: 8px; }
+details.fxbox .row { margin-top: 6px; }

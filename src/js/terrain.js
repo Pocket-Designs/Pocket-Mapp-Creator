@@ -134,7 +134,15 @@
    * @param {object} o { landMask, pathMask, mapW, mapH, scale (output px per map px), style, mapType, seed }
    */
   MT.renderBase = function (o) {
-    const L = LOOK[o.style] || LOOK.parchment;
+    // the map's own coastline & colour settings override the style's defaults
+    const C = o.coast || {};
+    const L = { ...(LOOK[o.style] || LOOK.parchment) };
+    if (C.gap != null) L.ringGap = C.gap;
+    if (C.width != null) L.coastW = C.width;
+    const lift = (c, d) => c.map((v) => Math.max(0, Math.min(255, v + d)));
+    if (C.sea) { const c = hex(C.sea); L.sea = c; L.seaFar = lift(c, -10); if (L.shallow) L.shallow = lift(c, 45); }
+    if (C.land) { const c = hex(C.land); L.land = c; L.landAlt = lift(c, -14); L.ground = c; L.groundAlt = lift(c, -16); }
+    if (C.rings != null && C.rings > 0) L.ringFade = Math.max(L.ringFade || 0, 0.5);   // ripples asked for are always clearly visible
     const w = Math.max(1, Math.round(o.mapW * o.scale)), h = Math.max(1, Math.round(o.mapH * o.scale));
     const s = o.scale; // output px per map px
     const land = sampleMask(o.landMask, w, h);
@@ -148,7 +156,7 @@
     const N = noiseFor(w, h, o.seed || 1);
     const world = o.mapType === 'world';
     const landCol = world ? L.land : L.ground, landAlt = world ? L.landAlt : L.groundAlt;
-    const rings = world ? L.rings : Math.min(1, L.rings);
+    const rings = C.rings != null ? C.rings : (world ? L.rings : Math.min(1, L.rings));
 
     const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
     const ctx = cv.getContext('2d');

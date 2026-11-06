@@ -22,12 +22,16 @@
     town: { label: 'Town / City / Village', desc: '3/4 view buildings, walls, roads', kind: 'town', sizes: [[2400, 1800], [3000, 2000], [1920, 1080]] },
     battle: { label: 'Battle Map', desc: 'Top-down RPG encounter maps with a grid', kind: 'battle', sizes: [[1400, 1400], [2100, 1400], [2800, 2100], [1050, 1050]] }
   };
+  const SHAPE_KINDS = { rect: 'Rectangle room', ellipse: 'Round room', poly: 'Polygon area' };
+  const WALL_KINDS = { stone: 'Stone wall', wood: 'Wooden wall', ink: 'Ink outline', none: 'No wall' };
+  const WALL_COL = { stone: { parchment: '#cbb488', colour: '#9a948a', watercolour: '#b9b3a8' }, wood: { parchment: '#bf9d66', colour: '#8a5a2e', watercolour: '#b08560' } };
   const LINE_KINDS = { river: 'River', road: 'Road (dashed)', trail: 'Trail (dotted)', border: 'Border (dash-dot)', wall: 'Wall (solid)', ink: 'Ink line' };
 
   // ------------------------------------------------------------------ state
   let doc = null;
   let filePath = null;
   let landMask, pathMask, maskScale = 1;
+  let texMasks = {}, texScale = 0.5, texComp = null, lastTexSnap = {};   // texture brush: one soft mask per texture
   let base = null, baseDirty = true, baseBusy = false;
   const view = { zoom: 1, ox: 0, oy: 0 };
   let tool = 'select';
@@ -38,6 +42,8 @@
     fillMode: 'land', fillGap: 12, autoClose: true,
     scatter: false, spacing: 1, randScale: 0.15, randRot: 0, randFlip: true, stampScale: 1, depthSort: true,
     lineKind: 'river', lineWidth: 6,
+    texType: 'grass', texSoft: 0.6, texStrength: 0.7, texOnlyLand: true, texErase: false,
+    shapeKind: 'rect', shapeFill: 'stone', shapeWall: 'stone', shapeWallW: 14,
     textFont: 'IM Fell English', textSize: 60, textColor: null, textBold: false, textItalic: false,
     genre: 'fantasy', kind: 'all', search: '',
     activeLayer: 'land'
@@ -63,6 +69,8 @@
       style: o.style || 'parchment',
       seed: o.seed || Math.floor(Math.random() * 1e6),
       grid: { type: type === 'battle' ? 'square' : 'none', size: 70, color: '#000000', opacity: 0.25 },
+      look: { bright: 100, contrast: 100, sat: 100, hue: 0, sepia: 0, vignette: 0 },
+      coast: { rings: null, gap: null, width: null, sea: null, land: null },
       layers: { water: { visible: true, locked: false }, land: { visible: true, locked: false }, assets: { visible: true, locked: false }, text: { visible: true, locked: false } },
       border: type !== 'battle',
       objects: [],
@@ -75,6 +83,8 @@
     const mw = Math.max(1, Math.round(w * maskScale)), mh = Math.max(1, Math.round(h * maskScale));
     landMask = document.createElement('canvas'); landMask.width = mw; landMask.height = mh;
     pathMask = document.createElement('canvas'); pathMask.width = mw; pathMask.height = mh;
+    texScale = maskScale * 0.5; texMasks = {}; lastTexSnap = {};
+    texComp = document.createElement('canvas'); texComp.width = mw; texComp.height = mh;
   }
   function fillMask(m, on) {
     const c = m.getContext('2d'); c.clearRect(0, 0, m.width, m.height);
@@ -132,13 +142,19 @@
   }
 
   // ------------------------------------------------------------------ base terrain
+  function lookFilter() {
+    const L = doc.look || {}; const f = [];
+    if (L.bright && L.bright !== 100) f.push(`brightness(${L.bright}%)`); if (L.contrast && L.contrast !== 100) f.push(`contrast(${L.contrast}%)`);
+    if (L.sat != null && L.sat !== 100) f.push(`saturate(${L.sat}%)`); if (L.hue) f.push(`hue-rotate(${L.hue}deg)`); if (L.sepia) f.push(`sepia(${L.sepia}%)`);
+    return f.length ? f.join(' ') : 'none';
+  }
   function rebuildBase(sync = false) {
     if (baseBusy) { baseDirty = true; return; }
     baseBusy = true;
     status('Inking coastlines…');
     const run = () => {
       try {
-        base = MT.renderBase(baseOpts(maskScale));
+        base = MT.renderBase(baseOpts(maskScale)); rebuildTexComposite();
       } finally {
         baseBusy = false; baseDirty = false; needsDraw = true; status('');
       }
@@ -156,6 +172,7 @@
       const m = measureText(o);
       return { w: m.w * o.s, h: m.h * o.s };
     }
+    if (o.t === 'shape') { const ww = o.wall === 'none' ? 0 : (o.wallW || 0); return { w: o.w * o.s + ww, h: o.h * o.s + ww }; }
     return { w: 0, h: 0 };
   }
   function fontStr(o) { return `${o.italic ? 'italic ' : ''}${o.bold ? '700 ' : ''}${o.size}px "${o.font}"`; }
@@ -170,18 +187,49 @@
   }
   function textLines(o) { const t = o.upper ? o.text.toUpperCase() : o.text; return o.curve ? [t.replace(/\n/g, ' ')] : t.split('\n'); }
 
+  // ---- object effects: drop shadow, glow, colour adjustments, tint (stored in o.ef)
+  const tintCache = new Map();
+  function tinted(key, im, color, amt) {
+    const ck = `${key}|${doc.style}|${color}|${amt}`; let c = tintCache.get(ck);
+    if (!c) {
+      c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+      const x = c.getContext('2d'); x.drawImage(im, 0, 0); x.globalCompositeOperation = 'source-atop'; x.globalAlpha = amt; x.fillStyle = color; x.fillRect(0, 0, c.width, c.height);
+      if (tintCache.size > 300) tintCache.clear(); tintCache.set(ck, c);
+    }
+    return c;
+  }
+  function fxFilter(e) {
+    if (!e) return 'none'; const f = [];
+    if (e.hue) f.push(`hue-rotate(${e.hue}deg)`); if (e.bright != null && e.bright !== 100) f.push(`brightness(${e.bright}%)`); if (e.sat != null && e.sat !== 100) f.push(`saturate(${e.sat}%)`);
+    return f.length ? f.join(' ') : 'none';
+  }
+  const devScale = (ctx) => { const T = ctx.getTransform(); return Math.hypot(T.a, T.b) || 1; };
+  // draw `paint` (a function that draws the object) with the object's shadow and glow
+  function withFx(ctx, e, k, paint) {
+    if (e && e.glow) { ctx.save(); ctx.shadowColor = e.glowColor || '#ffd84a'; ctx.shadowBlur = (e.glowSize || 16) * k; ctx.shadowOffsetX = ctx.shadowOffsetY = 0; paint(); paint(); ctx.restore(); }
+    if (e && e.shadow) { ctx.save(); ctx.shadowColor = `rgba(0,0,0,${e.shadowStr ?? 0.5})`; ctx.shadowBlur = 12 * k; ctx.shadowOffsetX = 8 * k; ctx.shadowOffsetY = 10 * k; paint(); ctx.restore(); }
+    else if (!(e && e.glow)) paint();
+    else paint();
+  }
   function drawAsset(ctx, o) {
     const inf = assetInfo(o.a); if (!inf) return;
     const im = getImg(o.a); if (!im.complete || !im.naturalWidth) return;
-    const k = inf.base * o.s;
+    const k = inf.base * o.s, dk = devScale(ctx), e = o.ef;
     ctx.save();
     ctx.translate(o.x, o.y); ctx.rotate(rad(o.r)); ctx.scale(o.fx ? -k : k, k);
     ctx.globalAlpha = o.o ?? 1;
-    ctx.drawImage(im, -inf.w / 2, -inf.h / 2, inf.w, inf.h);
+    const img = e && e.tint && e.tintAmt > 0 ? tinted(o.a, im, e.tint, e.tintAmt) : im;
+    if (e) ctx.filter = fxFilter(e);
+    withFx(ctx, e, dk, () => ctx.drawImage(img, -inf.w / 2, -inf.h / 2, inf.w, inf.h));
     ctx.restore();
   }
 
   function drawText(ctx, o) {
+    const dk = devScale(ctx), e = o.ef;
+    if (e && (e.shadow || e.glow)) {   // effects: draw the label once more underneath with the shadow/glow
+      const plain = { ...o, ef: null, halo: false };
+      withFx(ctx, { ...e }, dk, () => drawText(ctx, plain));
+    }
     ctx.save();
     ctx.translate(o.x, o.y); ctx.rotate(rad(o.r)); ctx.scale(o.s, o.s);
     ctx.globalAlpha = o.o ?? 1;
@@ -261,8 +309,58 @@
     }
     ctx.restore();
   }
+  function snapPt(p, mode = 'corner') {
+    const g = doc.grid; if (!g.snap || g.type !== 'square') return p;
+    const z = g.size;
+    if (mode === 'center') return { ...p, x: Math.floor(p.x / z) * z + z / 2, y: Math.floor(p.y / z) * z + z / 2 };
+    return { ...p, x: Math.round(p.x / z) * z, y: Math.round(p.y / z) * z };
+  }
+  function insertObj(o) {
+    if (o.t === 'shape') { let i = 0; while (i < doc.objects.length && doc.objects[i].t === 'shape') i++; doc.objects.splice(i, 0, o); }
+    else doc.objects.push(o);
+  }
+  // ---- shapes: rooms and areas with a textured floor and a wall
+  function shapePath(ctx, o) {
+    ctx.beginPath();
+    if (o.kind === 'ellipse') ctx.ellipse(0, 0, Math.max(0.5, o.w / 2), Math.max(0.5, o.h / 2), 0, 0, Math.PI * 2);
+    else if (o.kind === 'poly' && o.pts && o.pts.length > 2) { o.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); }
+    else ctx.rect(-o.w / 2, -o.h / 2, o.w, o.h);
+  }
+  function drawShape(ctx, o) {
+    const ink = INK[doc.style], s = o.s || 1, W = (o.wallW || 0) / s, e = o.ef, dk = devScale(ctx);
+    ctx.save(); ctx.globalAlpha = o.o ?? 1;
+    if (e) ctx.filter = fxFilter(e);
+    if (e && (e.shadow || e.glow)) {
+      ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(rad(o.r || 0)); ctx.scale(s, s);
+      withFx(ctx, e, dk, () => { shapePath(ctx, o); if (o.fill && o.fill !== 'none') { ctx.fillStyle = ink; ctx.fill(); } ctx.strokeStyle = ink; ctx.lineWidth = Math.max(W, 2 / s); ctx.stroke(); });
+      ctx.restore();
+    }
+    ctx.translate(o.x, o.y); ctx.rotate(rad(o.r || 0)); ctx.scale(s, s);
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    if (o.fill && o.fill !== 'none') {
+      shapePath(ctx, o);
+      const pat = ctx.createPattern(MT.textureTile(o.fill, doc.style), 'repeat');
+      pat.setTransform(new DOMMatrix().scale(1 / s));           // floor texture keeps its size when the room is resized
+      ctx.fillStyle = pat; ctx.fill();
+      // soft shadow inside the walls gives the room depth
+      if (o.wall !== 'none') { ctx.save(); shapePath(ctx, o); ctx.clip(); ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = Math.max(4, W * 1.2) * s; ctx.strokeStyle = ink; ctx.lineWidth = W * 1.4; shapePath(ctx, o); ctx.stroke(); ctx.restore(); }
+    }
+    if (o.wall && o.wall !== 'none') {
+      shapePath(ctx, o);
+      if (o.wall === 'ink') { ctx.strokeStyle = ink; ctx.lineWidth = Math.max(1, W * 0.45); ctx.stroke(); }
+      else {
+        const col = (WALL_COL[o.wall] || WALL_COL.stone)[doc.style];
+        ctx.strokeStyle = ink; ctx.lineWidth = W + 3 / s; ctx.stroke();
+        shapePath(ctx, o); ctx.strokeStyle = col; ctx.lineWidth = W; ctx.stroke();
+        shapePath(ctx, o); ctx.strokeStyle = ink; ctx.globalAlpha = (o.o ?? 1) * 0.45; ctx.lineWidth = Math.max(0.6, W * 0.12);
+        ctx.setLineDash(o.wall === 'stone' ? [W * 1.6, W * 0.9] : []); ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+    ctx.restore();
+  }
   function drawObject(ctx, o) {
     if (o.hidden) return;
+    if (o.t === 'shape') { drawShape(ctx, o); return; }
     if (o.t === 'asset') drawAsset(ctx, o);
     else if (o.t === 'text') drawText(ctx, o);
     else if (o.t === 'line') drawLine(ctx, o);
@@ -308,6 +406,8 @@
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     if (baseCanvas) ctx.drawImage(baseCanvas, 0, 0, doc.width, doc.height);
     else { ctx.fillStyle = PAPER[doc.style]; ctx.fillRect(0, 0, doc.width, doc.height); }
+    const texLayer = opts.texLayer !== undefined ? opts.texLayer : texComp;
+    if (texLayer && Object.keys(texMasks).length && layerState('land').visible) ctx.drawImage(texLayer, 0, 0, doc.width, doc.height);
     if (opts.floatLand) drawFloatingLand(ctx);
     if (opts.grid !== false) drawGrid(ctx);
     // layer 3: assets & lines
@@ -315,6 +415,13 @@
     drawBorder(ctx);
     // layer 4: text, always on top so nothing covers the labels
     if (layerState('text').visible) for (const o of doc.objects) if (o.t === 'text') drawObject(ctx, o);
+    // vignette: darker, aged edges
+    const v = doc.look && doc.look.vignette;
+    if (v > 0) {
+      const g = ctx.createRadialGradient(doc.width / 2, doc.height / 2, Math.min(doc.width, doc.height) * 0.3, doc.width / 2, doc.height / 2, Math.hypot(doc.width, doc.height) / 2);
+      g.addColorStop(0, 'rgba(40,24,10,0)'); g.addColorStop(1, `rgba(40,24,10,${(v / 100) * 0.85})`);
+      ctx.save(); ctx.fillStyle = g; ctx.fillRect(0, 0, doc.width, doc.height); ctx.restore();
+    }
   }
 
   // ------------------------------------------------------------------ stage render loop
@@ -323,9 +430,39 @@
     stage.width = Math.round(r.width * dpr); stage.height = Math.round(r.height * dpr);
     needsDraw = true;
   }
+  let shapeDraft = null;
   let paintPreview = null; // canvas at mask res showing un-inked brush strokes
   let lineDraft = null, marquee = null, hoverPt = null;
 
+  function shapeFromDraft(d) {
+    if (d.kind === 'poly') {
+      if (d.pts.length < 3) return null;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const [x, y] of d.pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      return { t: 'shape', kind: 'poly', x: cx, y: cy, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0), pts: d.pts.map(([x, y]) => [Math.round((x - cx) * 10) / 10, Math.round((y - cy) * 10) / 10]), s: 1, r: 0, o: 1, fill: d.fill, wall: d.wall, wallW: d.wallW };
+    }
+    let w = Math.abs(d.x1 - d.x0), h = Math.abs(d.y1 - d.y0);
+    if (d.square) { w = h = Math.max(w, h); }
+    const cx = d.x0 + Math.sign(d.x1 - d.x0 || 1) * w / 2, cy = d.y0 + Math.sign(d.y1 - d.y0 || 1) * h / 2;
+    return { t: 'shape', kind: d.kind, x: cx, y: cy, w, h, s: 1, r: 0, o: 1, fill: d.fill, wall: d.wall, wallW: d.wallW };
+  }
+  function drawShapeDraft(ctx) {
+    const d = shapeDraft;
+    if (d.kind === 'poly') {
+      const pts = hoverPt ? d.pts.concat([[hoverPt.x, hoverPt.y]]) : d.pts;
+      if (pts.length >= 3) { const o = shapeFromDraft({ ...d, pts }); if (o) { o.o = 0.75; drawShape(ctx, o); } }
+      ctx.save(); ctx.strokeStyle = '#4fa3e0'; ctx.lineWidth = 1.5 / view.zoom; ctx.setLineDash([6 / view.zoom, 4 / view.zoom]);
+      ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke(); ctx.setLineDash([]);
+      d.pts.forEach(([x, y], i) => { ctx.fillStyle = i === 0 ? '#e0a640' : '#fff'; ctx.beginPath(); ctx.arc(x, y, (i === 0 ? 7 : 4.5) / view.zoom, 0, 7); ctx.fill(); ctx.stroke(); });
+      ctx.restore();
+    } else if (d.x1 !== undefined) { const o = shapeFromDraft(d); o.o = 0.8; drawShape(ctx, o); }
+  }
+  function finishPolygon() {
+    const o = shapeFromDraft(shapeDraft); shapeDraft = null;
+    if (o) { o.id = uid(); insertObj(o); selection.clear(); selection.add(o.id); commit(); refreshPanels(); }
+    needsDraw = true;
+  }
   function draw() {
     if (!doc) return;
     if (baseDirty && !baseBusy && !painting) rebuildBase();
@@ -339,6 +476,7 @@
     if (leakFlash) ctx.drawImage(leakFlash, 0, 0, doc.width, doc.height);
     if (paintPreview) { ctx.globalAlpha = 0.85; ctx.drawImage(paintPreview, 0, 0, doc.width, doc.height); ctx.globalAlpha = 1; }
     if (lineDraft && lineDraft.pts.length > 1) drawLine(ctx, lineDraft);
+    if (shapeDraft) drawShapeDraft(ctx);
     ctx.restore();
     drawSelection(ctx); drawLandSelection(ctx);
     if (marquee) {
@@ -346,7 +484,7 @@
       const x = Math.min(marquee.x0, marquee.x1), y = Math.min(marquee.y0, marquee.y1);
       ctx.fillRect(x, y, Math.abs(marquee.x1 - marquee.x0), Math.abs(marquee.y1 - marquee.y0)); ctx.strokeRect(x, y, Math.abs(marquee.x1 - marquee.x0), Math.abs(marquee.y1 - marquee.y0)); ctx.restore();
     }
-    if (hoverPt && (isBrush())) {
+    if (hoverPt && (isBrush() || tool === 'texture')) {
       ctx.save(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 / view.zoom; ctx.beginPath(); ctx.arc(hoverPt.x, hoverPt.y, ui.brush / 2, 0, Math.PI * 2); ctx.stroke();
       ctx.strokeStyle = '#000'; ctx.setLineDash([4 / view.zoom, 4 / view.zoom]); ctx.stroke(); ctx.restore();
     }
@@ -354,6 +492,7 @@
       const ghost = { t: 'asset', a: stampKey, x: hoverPt.x, y: hoverPt.y, s: ui.stampScale, r: 0, o: 0.55 };
       drawAsset(ctx, ghost);
     }
+    { const lf = lookFilter(); stage.style.filter = lf === 'none' ? '' : lf; }
     { const zi = $('#zoomInput'); if (zi && document.activeElement !== zi) zi.value = `${Math.round(view.zoom * 100)}%`; }
     updateScrollbars();
   }
@@ -445,6 +584,7 @@
     } else c.arc(mx, my, r, 0, Math.PI * 2);
     c.fill();
     c.globalCompositeOperation = 'source-over';
+    if (mask === landMask && erase && Object.keys(texMasks).length) texDab(x, y, size, null, true, 0.15, 1, false);
     // preview
     const pc = paintPreview.getContext('2d');
     const L = MT.LOOK[doc.style];
@@ -477,7 +617,7 @@
       }
     }
     painting = null;
-    base = MT.renderBase(baseOpts(maskScale));
+    base = MT.renderBase(baseOpts(maskScale)); rebuildTexComposite();
     baseDirty = false; paintPreview = null; needsDraw = true;
     commit();
   }
@@ -540,8 +680,19 @@
     const prev = document.createElement('canvas'); prev.width = pw; prev.height = ph;
     const pc = prev.getContext('2d');
     pc.drawImage(base, x0 - m, y0 - m, pw, ph, 0, 0, pw, ph);
+    if (Object.keys(texMasks).length && texComp) pc.drawImage(texComp, x0 - m, y0 - m, pw, ph, 0, 0, pw, ph);
     pc.globalCompositeOperation = 'destination-in'; pc.filter = `blur(${Math.max(1, m * 0.15)}px)`; pc.drawImage(halo, 0, 0);
     lctx.putImageData(limg, 0, 0); pctx.putImageData(pimg, 0, 0);
+    // lift the textures on this land too
+    const tex = {}, k = texScale / maskScale;
+    for (const [t, tm] of Object.entries(texMasks)) {
+      const tw = Math.max(1, Math.round(bw * k)), th = Math.max(1, Math.round(bh * k));
+      const tc = document.createElement('canvas'); tc.width = tw; tc.height = th; const tx = tc.getContext('2d');
+      tx.drawImage(tm, x0 * k, y0 * k, bw * k, bh * k, 0, 0, tw, th);
+      tx.globalCompositeOperation = 'destination-in'; tx.drawImage(comp, 0, 0, tw, th);
+      const mc = tm.getContext('2d'); mc.globalCompositeOperation = 'destination-out'; mc.drawImage(comp, x0 * k, y0 * k, bw * k, bh * k); mc.globalCompositeOperation = 'source-over';
+      tex[t] = tc;
+    }
     // items standing on this land move with it
     const onIt = (px, py) => { const mx = Math.floor(px * maskScale) - x0, my = Math.floor(py * maskScale) - y0; return mx >= 0 && my >= 0 && mx < bw && my < bh && inc[my * bw + mx]; };
     const items = [];
@@ -551,7 +702,8 @@
       else if (onIt(o.x, o.y)) items.push({ o, x: o.x, y: o.y, s: o.s, r: o.r });
     }
     const ms = maskScale;
-    landSel = { comp, pcomp, prev, m, x0, y0, bw, bh, w0: bw / ms, h0: bh / ms, cx: (x0 + bw / 2) / ms, cy: (y0 + bh / 2) / ms, dx: 0, dy: 0, s: 1, r: 0, items, withItems: true, changed: false };
+    rebuildTexComposite();
+    landSel = { comp, pcomp, tex, prev, m, x0, y0, bw, bh, w0: bw / ms, h0: bh / ms, cx: (x0 + bw / 2) / ms, cy: (y0 + bh / 2) / ms, dx: 0, dy: 0, s: 1, r: 0, items, withItems: true, changed: false };
     baseDirty = true; needsDraw = true;
     return landSel;
   }
@@ -571,8 +723,8 @@
     L.changed = L.dx !== 0 || L.dy !== 0 || L.s !== 1 || L.r !== 0;
     needsDraw = true;
   }
-  function stampLand(mask, src) {
-    const L = landSel, c = mask.getContext('2d'), ms = maskScale;
+  function stampLand(mask, src, ms = maskScale) {
+    const L = landSel, c = mask.getContext('2d');
     c.save(); c.setTransform(ms, 0, 0, ms, 0, 0);
     c.translate(L.cx + L.dx, L.cy + L.dy); c.rotate(rad(L.r)); c.scale(L.s, L.s);
     c.imageSmoothingEnabled = !(L.s === 1 && L.r === 0);
@@ -589,9 +741,10 @@
         const ox = Math.round(L.dx * maskScale), oy = Math.round(L.dy * maskScale);
         landMask.getContext('2d').drawImage(L.comp, L.x0 + ox, L.y0 + oy); pathMask.getContext('2d').drawImage(L.pcomp, L.x0 + ox, L.y0 + oy);
       } else { stampLand(landMask, L.comp); stampLand(pathMask, L.pcomp); }
+      for (const [t, tc] of Object.entries(L.tex || {})) stampLand(texMask(t, true), tc, texScale);
     }
     landSel = null;
-    base = MT.renderBase(baseOpts(maskScale));
+    base = MT.renderBase(baseOpts(maskScale)); rebuildTexComposite();
     baseDirty = false; needsDraw = true;
     if (changed) commit();
     settling = false;
@@ -688,6 +841,12 @@
       const p = pathMask.getContext('2d', { willReadFrequently: true }), pimg = p.getImageData(0, 0, mw, mh);
       for (let i = 0; i < mw * mh; i++) if (R.seen[i]) pimg.data[i * 4 + 3] = 0;
       p.putImageData(pimg, 0, 0);
+      if (Object.keys(texMasks).length) {
+        const rc = document.createElement('canvas'); rc.width = mw; rc.height = mh; const rx = rc.getContext('2d'), ri = rx.createImageData(mw, mh);
+        for (let i = 0; i < mw * mh; i++) if (R.seen[i]) ri.data[i * 4 + 3] = 255;
+        rx.putImageData(ri, 0, 0);
+        for (const m of Object.values(texMasks)) { const c = m.getContext('2d'); c.globalCompositeOperation = 'destination-out'; c.drawImage(rc, 0, 0, m.width, m.height); c.globalCompositeOperation = 'source-over'; }
+      }
       afterFill('Land turned into sea.'); return;
     }
 
@@ -763,7 +922,7 @@
     return { seen, touchesEdge: edge, count };
   }
   function afterFill(msg) {
-    base = MT.renderBase(baseOpts(maskScale)); baseDirty = false; needsDraw = true;
+    base = MT.renderBase(baseOpts(maskScale)); rebuildTexComposite(); baseDirty = false; needsDraw = true;
     commit(); toast(msg, 'ok');
   }
   let leakFlash = null;
@@ -774,6 +933,67 @@
     x.putImageData(img, 0, 0); leakFlash = c; needsDraw = true;
     setTimeout(() => { leakFlash = null; needsDraw = true; }, 1400);
   }
+
+  // ------------------------------------------------------------------ texture brush (land layer)
+  // Each texture keeps its own soft alpha mask (half the land mask's resolution); the visible
+  // texture layer is drawn from those masks in the current style, so textures re-colour with the style.
+  function texMask(type, create) {
+    let m = texMasks[type];
+    if (!m && create) { m = texMasks[type] = document.createElement('canvas'); m.width = Math.max(1, Math.round(doc.width * texScale)); m.height = Math.max(1, Math.round(doc.height * texScale)); }
+    return m;
+  }
+  // draw the textures for one map rectangle into `target` (whose pixels are `scale` per map unit)
+  function compositeRegion(target, scale, rx, ry, rw, rh) {
+    const tc = target.getContext('2d');
+    const x0 = Math.max(0, Math.floor(rx * scale)), y0 = Math.max(0, Math.floor(ry * scale));
+    const x1 = Math.min(target.width, Math.ceil((rx + rw) * scale)), y1 = Math.min(target.height, Math.ceil((ry + rh) * scale));
+    const w = x1 - x0, h = y1 - y0; if (w <= 0 || h <= 0) return;
+    tc.clearRect(x0, y0, w, h);
+    const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h; const t = tmp.getContext('2d');
+    for (const [type, m] of Object.entries(texMasks)) {
+      t.globalCompositeOperation = 'source-over'; t.clearRect(0, 0, w, h);
+      const pat = t.createPattern(MT.textureTile(type, doc.style), 'repeat');
+      pat.setTransform(new DOMMatrix().translate(-x0, -y0).scale(scale));
+      t.fillStyle = pat; t.fillRect(0, 0, w, h);
+      t.globalCompositeOperation = 'destination-in';
+      const k = texScale / scale;
+      t.drawImage(m, x0 * k, y0 * k, w * k, h * k, 0, 0, w, h);
+      tc.drawImage(tmp, x0, y0);
+    }
+  }
+  function rebuildTexComposite() {
+    if (!texComp) return;
+    const tc = texComp.getContext('2d'); tc.clearRect(0, 0, texComp.width, texComp.height);
+    if (Object.keys(texMasks).length) compositeRegion(texComp, maskScale, 0, 0, doc.width, doc.height);
+  }
+  function renderTextures(scale) {           // a fresh texture layer at any resolution (for exports)
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(doc.width * scale)); c.height = Math.max(1, Math.round(doc.height * scale));
+    if (Object.keys(texMasks).length) compositeRegion(c, scale, 0, 0, doc.width, doc.height);
+    return c;
+  }
+  function texDab(x, y, size, type, erase, soft, strength, onlyLand) {
+    const ts = texScale, r = Math.max(1, (size / 2) * ts), d = Math.ceil(r * 2) + 2, ox = x * ts - d / 2, oy = y * ts - d / 2;
+    const A = document.createElement('canvas'); A.width = A.height = d; const a = A.getContext('2d');
+    const g = a.createRadialGradient(d / 2, d / 2, r * (1 - soft) * 0.98, d / 2, d / 2, r);
+    g.addColorStop(0, `rgba(0,0,0,${strength})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    a.fillStyle = g; a.fillRect(0, 0, d, d);
+    if (!erase && onlyLand) { const k = maskScale / ts; a.globalCompositeOperation = 'destination-in'; a.drawImage(landMask, ox * k, oy * k, d * k, d * k, 0, 0, d, d); }
+    for (const [t, m] of Object.entries(texMasks)) if (erase || t !== type) { const c = m.getContext('2d'); c.globalCompositeOperation = 'destination-out'; c.drawImage(A, ox, oy); c.globalCompositeOperation = 'source-over'; }
+    if (!erase) texMask(type, true).getContext('2d').drawImage(A, ox, oy);
+    compositeRegion(texComp, maskScale, x - size / 2 - 2, y - size / 2 - 2, size + 4, size + 4);
+    needsDraw = true;
+  }
+  let texPainting = null;
+  function startTexPaint(p, erase) {
+    texPainting = { last: p, erase };
+    texDab(p.x, p.y, ui.brush, ui.texType, erase, ui.texSoft, ui.texStrength, ui.texOnlyLand);
+  }
+  function continueTexPaint(p) {
+    const T = texPainting, d = Math.hypot(p.x - T.last.x, p.y - T.last.y), step = Math.max(2, ui.brush * 0.2);
+    for (let t = step; t <= d; t += step) texDab(T.last.x + ((p.x - T.last.x) * t) / d, T.last.y + ((p.y - T.last.y) * t) / d, ui.brush, ui.texType, T.erase, ui.texSoft, ui.texStrength, ui.texOnlyLand);
+    if (d >= step) T.last = p;
+  }
+  function endTexPaint() { texPainting = null; commit(); }
 
   // ------------------------------------------------------------------ objects: create / edit
   function addAsset(key, x, y, opts = {}) {
@@ -847,7 +1067,7 @@
     const ids = [];
     for (const src of clipboard.objs) {
       const o = JSON.parse(JSON.stringify(src)); o.id = uid(); delete o.hidden;
-      moveObj(o, dx, dy); doc.objects.push(o); ids.push(o.id);
+      moveObj(o, dx, dy); insertObj(o); ids.push(o.id);
     }
     if (Object.keys(clipboard.custom).length) buildLibrary();
     setActiveLayer(layer, true);
@@ -882,10 +1102,13 @@
     if (!same(lastLandSnap, land)) lastLandSnap = land;
     if (!same(lastPathSnap, path)) lastPathSnap = path;
     void pc;
+    const tex = {};
+    for (const [t, m] of Object.entries(texMasks)) { const d = m.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, m.width, m.height); tex[t] = same(lastTexSnap[t], d) ? lastTexSnap[t] : d; }
+    lastTexSnap = tex;
     const { objects, custom, ...settings } = doc;
-    return { json: JSON.stringify({ objects, settings }), custom, land: lastLandSnap, path: lastPathSnap, mw: landMask.width, mh: landMask.height };
+    return { json: JSON.stringify({ objects, settings }), custom, land: lastLandSnap, path: lastPathSnap, tex, mw: landMask.width, mh: landMask.height };
   }
-  function resetHistory() { history.length = 0; hIndex = -1; lastLandSnap = lastPathSnap = null; commit(true); }
+  function resetHistory() { history.length = 0; hIndex = -1; lastLandSnap = lastPathSnap = null; lastTexSnap = {}; commit(true); }
   function commit(initial = false) {
     if (landSel && !settling) { const ch = landSel.changed; settleLand(); if (ch) return; /* settling already saved this step */ }
     history.length = hIndex + 1;
@@ -902,6 +1125,9 @@
     if (landMask.width !== st.mw || landMask.height !== st.mh) { landMask.width = pathMask.width = st.mw; landMask.height = pathMask.height = st.mh; maskScale = st.mw / doc.width; }
     landMask.getContext('2d').putImageData(st.land, 0, 0); pathMask.getContext('2d').putImageData(st.path, 0, 0);
     lastLandSnap = st.land; lastPathSnap = st.path;
+    texMasks = {}; texScale = maskScale * 0.5;
+    for (const [t, d] of Object.entries(st.tex || {})) { const m = texMask(t, true); if (m.width !== d.width || m.height !== d.height) { m.width = d.width; m.height = d.height; } m.getContext('2d').putImageData(d, 0, 0); }
+    lastTexSnap = { ...(st.tex || {}) };
     for (const id of [...selection]) if (!findObj(id)) selection.delete(id);
     baseDirty = true;
     if (prevStyle !== doc.style || prevType !== doc.type) buildLibrary();
@@ -1011,6 +1237,11 @@
       const erase = tool === 'ocean' ? !e.altKey : tool === 'land' ? e.altKey : (ui.brushMode === 'erase' || e.altKey);
       startPaint(p, tool === 'path' ? 'path' : 'land', erase); dragState = { type: 'paint' }; return;
     }
+    if (tool === 'texture') {
+      const msg = layerBlocked('land'); if (msg) { status(msg); return; }
+      if (landSel) settleLand();
+      startTexPaint(p, ui.texErase || e.altKey); dragState = { type: 'tex' }; return;
+    }
     if (tool === 'fill') {
       const msg = layerBlocked('land'); if (msg) { status(msg); return; }
       if (landSel) settleLand();
@@ -1023,6 +1254,20 @@
       const o = placeStamp(p.x, p.y);
       dragState = { type: 'stamp', last: p, placed: [o.id] };
       needsDraw = true; return;
+    }
+    if (tool === 'shape') {
+      const q = snapPt(p);
+      if (ui.shapeKind === 'poly') {
+        if (!shapeDraft) shapeDraft = { kind: 'poly', pts: [], fill: ui.shapeFill, wall: ui.shapeWall, wallW: ui.shapeWallW };
+        const first = shapeDraft.pts[0];
+        if (first && shapeDraft.pts.length >= 3 && Math.hypot(q.x - first[0], q.y - first[1]) < 12 / view.zoom) { finishPolygon(); return; }
+        if (e.detail >= 2 && shapeDraft.pts.length >= 3) { finishPolygon(); return; }   // double-click finishes
+        shapeDraft.pts.push([q.x, q.y]); needsDraw = true;
+        status('Click to add corners. Click the first (orange) point, double-click or press Enter to finish; Esc cancels.');
+        return;
+      }
+      shapeDraft = { kind: ui.shapeKind, x0: q.x, y0: q.y, fill: ui.shapeFill, wall: ui.shapeWall, wallW: ui.shapeWallW };
+      dragState = { type: 'shape' }; return;
     }
     if (tool === 'line') { lineDraft = { t: 'line', kind: ui.lineKind, w: ui.lineWidth, o: 1, pts: [[p.x, p.y]] }; dragState = { type: 'line' }; return; }
     if (tool === 'text') {
@@ -1075,7 +1320,7 @@
       if (e.shiftKey || e.ctrlKey || e.metaKey) { if (selection.has(hit.id)) selection.delete(hit.id); else selection.add(hit.id); }
       else if (!selection.has(hit.id)) { selection.clear(); selection.add(hit.id); }
       if (e.altKey) { duplicateSelectionInPlace(); }
-      dragState = { type: 'move', last: p, moved: false };
+      dragState = { type: 'move', last: p, start: p, moved: false, orig: new Map([...selection].map((id) => { const q = findObj(id); return [id, q.t === 'line' ? null : { x: q.x, y: q.y }]; })) };
     } else {
       if (!e.shiftKey) selection.clear();
       if (layerUsable('land') && landAt(p.x, p.y)) status(`Nothing on the ${ui.activeLayer === 'text' ? 'Text' : 'Assets'} layer here. To select the land, click Land in the Layers panel (or press 1).`);
@@ -1090,6 +1335,7 @@
     selection.clear(); ids.forEach((i) => selection.add(i));
   }
   function placeStamp(x, y) {
+    if (!ui.scatter) ({ x, y } = snapPt({ x, y }, 'center'));
     const sc = ui.stampScale * (1 + (Math.random() * 2 - 1) * (ui.scatter ? ui.randScale : 0));
     const rr = ui.scatter && ui.randRot ? (Math.random() * 2 - 1) * ui.randRot : 0;
     const fx = ui.scatter && ui.randFlip ? Math.random() < 0.5 : false;
@@ -1098,24 +1344,35 @@
 
   stage.addEventListener('pointermove', (e) => {
     const p = toMap(e); hoverPt = p;
-    if (isBrush() || tool === 'stamp') needsDraw = true;
+    if (isBrush() || tool === 'texture' || tool === 'stamp' || (tool === 'shape' && shapeDraft)) needsDraw = true;
     status(`${Math.round(p.x)}, ${Math.round(p.y)}${doc.grid.type === 'square' ? `  ·  square ${Math.floor(p.x / doc.grid.size) + 1}, ${Math.floor(p.y / doc.grid.size) + 1}` : ''}`, true);
     if (!dragState) { updateCursor(p); return; }
     const d = dragState;
     if (d.type === 'pan') { view.ox = d.ox + (p.sx - d.sx); view.oy = d.oy + (p.sy - d.sy); needsDraw = true; }
     else if (d.type === 'paint') continuePaint(p);
+    else if (d.type === 'tex') continueTexPaint(p);
     else if (d.type === 'stamp' && ui.scatter) {
       const inf = assetInfo(stampKey); const gap = Math.max(8, Math.max(inf.w, inf.h) * inf.base * ui.stampScale * 0.55 * ui.spacing);
       if (Math.hypot(p.x - d.last.x, p.y - d.last.y) >= gap) {
         const jx = (Math.random() - 0.5) * gap * 0.5, jy = (Math.random() - 0.5) * gap * 0.5;
         d.placed.push(placeStamp(p.x + jx, p.y + jy).id); d.last = p; needsDraw = true;
       }
+    } else if (d.type === 'shape' && shapeDraft) {
+      const q = snapPt(p); shapeDraft.x1 = q.x; shapeDraft.y1 = q.y; shapeDraft.square = e.shiftKey; needsDraw = true;
     } else if (d.type === 'line') {
       const l = lineDraft.pts[lineDraft.pts.length - 1];
       if (Math.hypot(p.x - l[0], p.y - l[1]) > 4 / view.zoom) { lineDraft.pts.push([p.x, p.y]); needsDraw = true; }
     } else if (d.type === 'move') {
       const dx = p.x - d.last.x, dy = p.y - d.last.y; d.last = p; d.moved = true;
-      for (const id of selection) moveObj(findObj(id), dx, dy);
+      if (doc.grid.snap && doc.grid.type === 'square' && d.orig) {
+        for (const id of selection) {
+          const o = findObj(id), O = d.orig.get(id); if (!O || !o) { moveObj(o, dx, dy); continue; }
+          const tx = O.x + (p.x - d.start.x), ty = O.y + (p.y - d.start.y);
+          if (o.t === 'shape') { const { w, h } = objSize(o); const ww = w - (o.wall === 'none' ? 0 : o.wallW || 0), hh = h - (o.wall === 'none' ? 0 : o.wallW || 0); const q = snapPt({ x: tx - ww / 2, y: ty - hh / 2 }); o.x = q.x + ww / 2; o.y = q.y + hh / 2; }
+          else if (o.t === 'asset') { const q = snapPt({ x: tx, y: ty }, 'center'); o.x = q.x; o.y = q.y; }
+          else { o.x = tx; o.y = ty; }
+        }
+      } else for (const id of selection) moveObj(findObj(id), dx, dy);
       needsDraw = true; refreshPropsValues();
     } else if (d.type === 'rotate') {
       let r = d.r0 + ((Math.atan2(p.y - d.o.y, p.x - d.o.x) - d.start) * 180) / Math.PI;
@@ -1131,7 +1388,13 @@
   function finishPointer() {
     const d = dragState; dragState = null; if (!d) return;
     if (d.type === 'paint') endPaint();
+    else if (d.type === 'tex') endTexPaint();
     else if (d.type === 'stamp') { commit(); }
+    else if (d.type === 'shape') {
+      const o = shapeDraft && shapeDraft.x1 !== undefined ? shapeFromDraft(shapeDraft) : null; shapeDraft = null;
+      if (o && o.w > 4 && o.h > 4) { o.id = uid(); insertObj(o); selection.clear(); selection.add(o.id); commit(); refreshPanels(); }
+      else status('Drag to draw a room: from one corner to the opposite corner.');
+    }
     else if (d.type === 'line') {
       if (lineDraft.pts.length > 1) { const o = { id: uid(), ...lineDraft, pts: simplify(lineDraft.pts, 1.5 / view.zoom) }; doc.objects.push(o); commit(); }
       lineDraft = null;
@@ -1159,8 +1422,8 @@
   function updateCursor(p) {
     let c = 'default';
     if (tool === 'pan' || spaceDown) c = 'grab';
-    else if (isBrush()) c = 'none';
-    else if (tool === 'stamp' || tool === 'line') c = 'crosshair';
+    else if (isBrush() || tool === 'texture') c = 'none';
+    else if (tool === 'stamp' || tool === 'line' || tool === 'shape') c = 'crosshair';
     else if (tool === 'fill') c = 'cell';
     else if (tool === 'text') c = 'text';
     else { const lh = hitLandHandle(p.x, p.y), h = lh ? null : hitHandle(p.x, p.y); if (lh) c = lh === 'rotate' ? 'alias' : 'nwse-resize'; else if (h) c = h.type === 'rotate' ? 'alias' : 'nwse-resize'; else if (hitTest(p.x, p.y) || (landSel && insideLandBox(p.x, p.y))) c = 'move'; else if (ui.activeLayer === 'land' && landAt(p.x, p.y)) c = 'pointer'; }
@@ -1185,13 +1448,13 @@
   wrap.addEventListener('dragover', (e) => e.preventDefault());
   wrap.addEventListener('drop', (e) => {
     e.preventDefault(); const key = e.dataTransfer.getData('text/mapp-asset'); if (!key) return;
-    const p = toMap(e); const o = addAsset(key, p.x, p.y, { s: ui.stampScale });
+    const p = snapPt(toMap(e), 'center'); const o = addAsset(key, p.x, p.y, { s: ui.stampScale });
     selection.clear(); selection.add(o.id); commit(); refreshPanels(); needsDraw = true;
   });
 
   // ------------------------------------------------------------------ keyboard
   window.addEventListener('keydown', (e) => {
-    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
+    const typing = typingNow() || document.activeElement?.tagName === 'SELECT';   // drop-downs use the arrow keys themselves
     if ((e.ctrlKey || e.metaKey) && !typing) {
       const k = e.key.toLowerCase();
       if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
@@ -1207,6 +1470,7 @@
       const k = e.key.toLowerCase(), act = { c: 'copy', x: 'cut', v: 'paste', a: 'selectAll', z: e.shiftKey ? 'redo' : 'undo' }[k];
       if (act) { e.preventDefault(); api.nativeEdit(act); return; }
     }
+    if (e.key === 'F1') { e.preventDefault(); openGuide(); return; }
     if (typing) return;
     if (e.key === ' ') { spaceDown = true; stage.style.cursor = 'grab'; e.preventDefault(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && landSel) { settleLand(true); return; }
@@ -1214,12 +1478,15 @@
     if ((e.key === '[' || e.key === ']') && landSel) { setLandScale(landSel.s * (e.key === ']' ? 1.1 : 0.9)); refreshLandProps(); return; }
     if ((e.key === 'r' || e.key === 'R') && landSel) { setLandRot(landSel.r + (e.shiftKey ? -15 : 15)); refreshLandProps(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { if (selection.size) { deleteIds([...selection]); commit(); refreshPanels(); needsDraw = true; } return; }
+    if (e.key === 'Enter' && shapeDraft && shapeDraft.kind === 'poly') { finishPolygon(); return; }
+    if (e.key === 'Escape' && shapeDraft) { shapeDraft = null; needsDraw = true; return; }
+    if ((e.key === 'Backspace') && shapeDraft && shapeDraft.kind === 'poly' && shapeDraft.pts.length) { shapeDraft.pts.pop(); needsDraw = true; return; }
     if (e.key === 'Escape') { selection.clear(); lineDraft = null; refreshPanels(); needsDraw = true; return; }
     const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     if (arrows[e.key] && selection.size) { const m = e.shiftKey ? 10 : 1; for (const id of selection) moveObj(findObj(id), arrows[e.key][0] * m, arrows[e.key][1] * m); commit(); refreshPropsValues(); needsDraw = true; e.preventDefault(); return; }
     if (e.key === '[' || e.key === ']') {
       const dir = e.key === ']' ? 1 : -1;
-      if (isBrush()) { ui.brush = clamp(ui.brush + dir * 10, 4, 600); renderToolOptions(); needsDraw = true; }
+      if (isBrush() || tool === 'texture') { ui.brush = clamp(ui.brush + dir * 10, 4, 600); renderToolOptions(); needsDraw = true; }
       else if (selection.size) { for (const id of selection) { const o = findObj(id); if (o.t !== 'line') o.s = clamp(o.s * (dir > 0 ? 1.1 : 0.9), 0.05, 20); } commit(); refreshPropsValues(); needsDraw = true; }
       return;
     }
@@ -1228,7 +1495,7 @@
     if (e.key === '1') { setActiveLayer('land'); return; }
     if (e.key === '2') { setActiveLayer('assets'); return; }
     if (e.key === '3') { setActiveLayer('text'); return; }
-    const map = { v: 'select', s: 'stamp', b: 'land', e: 'ocean', g: 'fill', p: 'path', l: 'line', t: 'text', h: 'pan' };
+    const map = { v: 'select', s: 'stamp', b: 'land', e: 'ocean', g: 'fill', x: 'texture', p: 'path', l: 'line', u: 'shape', t: 'text', h: 'pan' };
     if (map[e.key.toLowerCase()]) setTool(map[e.key.toLowerCase()]);
   });
   window.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceDown = false; stage.style.cursor = ''; } });
@@ -1246,7 +1513,7 @@
   function layerState(id) { return (doc.layers && doc.layers[id]) || { visible: true, locked: false }; }
   function layerUsable(id) { const L = layerState(id); return L.visible && !L.locked; }
   function baseOpts(scale) {
-    return { landMask, pathMask, mapW: doc.width, mapH: doc.height, scale, style: doc.style, mapType: doc.type, seed: doc.seed, hideLand: !layerState('land').visible, hideWater: !layerState('water').visible };
+    return { landMask, pathMask, mapW: doc.width, mapH: doc.height, scale, style: doc.style, mapType: doc.type, seed: doc.seed, hideLand: !layerState('land').visible, hideWater: !layerState('water').visible, coast: doc.coast };
   }
   function layerBlocked(id) { // returns a message when a layer can't be edited, else ''
     const L = layerState(id), nm = LAYERS.find((x) => x.id === id).name;
@@ -1297,9 +1564,10 @@
   // ------------------------------------------------------------------ tools UI
   function isBrush() { return tool === 'land' || tool === 'ocean' || tool === 'path'; }
   function setTool(t) {
+    if (t !== 'shape') shapeDraft = null;
     if (t !== 'select') settleLand();
     tool = t;
-    const want = { land: 'land', ocean: 'land', path: 'land', fill: 'land', stamp: 'assets', line: 'assets', text: 'text' }[t];
+    const want = { land: 'land', ocean: 'land', path: 'land', fill: 'land', texture: 'land', stamp: 'assets', line: 'assets', shape: 'assets', text: 'text' }[t];
     if (want && doc) setActiveLayer(want, true);
     $$('.tool').forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
     renderToolOptions(); needsDraw = true;
@@ -1321,6 +1589,21 @@
       $('#toBrush').oninput = (e) => { ui.brush = +e.target.value; $('#toBrushV').textContent = ui.brush; };
       $('#toRough').onchange = (e) => { ui.rough = e.target.checked; };
       if ($('#toClose')) $('#toClose').onchange = (e) => { ui.autoClose = e.target.checked; };
+    } else if (tool === 'texture') {
+      el.innerHTML = `
+        <b>Texture brush</b>
+        <select id="toTex">${Object.entries(MT.TEXTURES).map(([k, v]) => `<option value="${k}" ${k === ui.texType ? 'selected' : ''}>${v}</option>`).join('')}</select>
+        <div class="seg"><button data-tm="paint" class="${!ui.texErase ? 'on' : ''}">Paint</button><button data-tm="erase" class="${ui.texErase ? 'on' : ''}">Erase</button></div>
+        <label>Size <input type="range" id="toBrush" min="4" max="600" value="${ui.brush}"> <span id="toBrushV">${ui.brush}</span></label>
+        <label>Soft <input type="range" id="toSoft" min="0" max="1" step="0.05" value="${ui.texSoft}"></label>
+        <label>Strength <input type="range" id="toStr" min="0.1" max="1" step="0.05" value="${ui.texStrength}"></label>
+        <label class="chk" title="Keep the texture on land only"><input type="checkbox" id="toOnly" ${ui.texOnlyLand ? 'checked' : ''}> Land only</label>`;
+      $('#toTex').onchange = (e) => { ui.texType = e.target.value; };
+      el.querySelectorAll('[data-tm]').forEach((b) => b.onclick = () => { ui.texErase = b.dataset.tm === 'erase'; renderToolOptions(); });
+      $('#toBrush').oninput = (e) => { ui.brush = +e.target.value; $('#toBrushV').textContent = ui.brush; };
+      $('#toSoft').oninput = (e) => { ui.texSoft = +e.target.value; };
+      $('#toStr').oninput = (e) => { ui.texStrength = +e.target.value; };
+      $('#toOnly').onchange = (e) => { ui.texOnlyLand = e.target.checked; };
     } else if (tool === 'fill') {
       el.innerHTML = `
         <b>Fill bucket</b>
@@ -1349,6 +1632,18 @@
         $('#toRandR').oninput = (e) => { ui.randRot = +e.target.value; };
         $('#toFlip').onchange = (e) => { ui.randFlip = e.target.checked; };
       }
+    } else if (tool === 'shape') {
+      const opt = (obj, cur) => Object.entries(obj).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v}</option>`).join('');
+      el.innerHTML = `<b>Shapes</b>
+        <div class="seg">${Object.entries({ rect: '▭ Rectangle', ellipse: '◯ Round', poly: '⬠ Polygon' }).map(([k, v]) => `<button data-sk="${k}" class="${ui.shapeKind === k ? 'on' : ''}">${v}</button>`).join('')}</div>
+        <label>Floor <select id="toFill">${opt({ ...MT.TEXTURES, none: 'None (walls only)' }, ui.shapeFill)}</select></label>
+        <label>Wall <select id="toWall">${opt(WALL_KINDS, ui.shapeWall)}</select></label>
+        <label>Width <input type="range" id="toWW" min="2" max="40" value="${ui.shapeWallW}"> <span id="toWWV">${ui.shapeWallW}</span></label>
+        <span class="muted">${ui.shapeKind === 'poly' ? 'Click corners; click the first point to finish' : 'Drag corner to corner (Shift = square)'}</span>`;
+      el.querySelectorAll('[data-sk]').forEach((b) => b.onclick = () => { ui.shapeKind = b.dataset.sk; shapeDraft = null; renderToolOptions(); });
+      $('#toFill').onchange = (e) => { ui.shapeFill = e.target.value; };
+      $('#toWall').onchange = (e) => { ui.shapeWall = e.target.value; };
+      $('#toWW').oninput = (e) => { ui.shapeWallW = +e.target.value; $('#toWWV').textContent = ui.shapeWallW; };
     } else if (tool === 'line') {
       el.innerHTML = `<b>Lines</b>
         <select id="toKind">${Object.entries(LINE_KINDS).map(([k, v]) => `<option value="${k}" ${k === ui.lineKind ? 'selected' : ''}>${v}</option>`).join('')}</select>
@@ -1435,6 +1730,15 @@
     if (!landSel) return; const set = (sel_, v) => { const n = $(sel_); if (n && document.activeElement !== n) n.value = v; };
     set('#lS', Math.round(landSel.s * 100)); set('#lSn', Math.round(landSel.s * 100)); set('#lR', Math.round(landSel.r)); set('#lRn', Math.round(landSel.r));
   }
+  function coastVal(key) {
+    const L = MT.LOOK[doc.style], C = doc.coast || {}, world = doc.type === 'world';
+    const toHex = (a) => '#' + a.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+    if (key === 'rings') return C.rings != null ? C.rings : (world ? L.rings : Math.min(1, L.rings));
+    if (key === 'gap') return C.gap != null ? C.gap : L.ringGap;
+    if (key === 'width') return C.width != null ? C.width : L.coastW;
+    if (key === 'sea') return C.sea || toHex(L.sea);
+    if (key === 'land') return C.land || toHex(world ? L.land : L.ground);
+  }
   function renderProps() {
     const el = $('#props');
     if (landSel) {
@@ -1471,6 +1775,22 @@
         ${propRow('Grid', `<select id="pGrid"><option value="none">None</option><option value="square" ${g.type === 'square' ? 'selected' : ''}>Square</option><option value="hex" ${g.type === 'hex' ? 'selected' : ''}>Hex</option></select>`)}
         ${propRow('Cell size', `<input type="number" id="pGridSize" min="10" max="500" value="${g.size}"> px`)}
         ${propRow('Colour', `<input type="color" id="pGridCol" value="${g.color}"><input type="range" id="pGridOp" min="0.05" max="1" step="0.05" value="${g.opacity}">`)}
+        <details class="fxbox"><summary>Coastline &amp; colours</summary>
+        ${propRow('Ripples', `<input type="range" id="cRings" min="0" max="8" value="${coastVal('rings')}"><span id="cRingsV">${coastVal('rings')}</span>`)}
+        ${propRow('Spacing', `<input type="range" id="cGap" min="3" max="24" value="${coastVal('gap')}">`)}
+        ${propRow('Coast line', `<input type="range" id="cWidth" min="0" max="7" step="0.1" value="${coastVal('width')}">`)}
+        ${propRow('Sea colour', `<input type="color" id="cSea" value="${coastVal('sea')}"><button class="mini" id="cSeaR">Default</button>`)}
+        ${propRow('Land colour', `<input type="color" id="cLand" value="${coastVal('land')}"><button class="mini" id="cLandR">Default</button>`)}
+        </details>
+        <details class="fxbox"><summary>Map look (filters)</summary>
+        ${propRow('Brightness', `<input type="range" id="lkBright" min="50" max="150" value="${doc.look.bright}">`)}
+        ${propRow('Contrast', `<input type="range" id="lkContrast" min="50" max="150" value="${doc.look.contrast}">`)}
+        ${propRow('Saturation', `<input type="range" id="lkSat" min="0" max="200" value="${doc.look.sat}">`)}
+        ${propRow('Hue', `<input type="range" id="lkHue" min="-180" max="180" value="${doc.look.hue}">`)}
+        ${propRow('Sepia', `<input type="range" id="lkSepia" min="0" max="100" value="${doc.look.sepia}">`)}
+        ${propRow('Vignette', `<input type="range" id="lkVig" min="0" max="100" value="${doc.look.vignette}">`)}
+        <div class="btnrow"><button class="mini" id="lkReset">Reset look</button></div>
+        </details>
         <p class="muted">Suggested order: paint land with the <b>Land</b> and <b>Ocean</b> brushes, add mountains, forests and towns, then finish with <b>Text</b>. Labels always sit on top of everything else.<br>To resize land: make <b>Land</b> the active layer, choose <b>Select</b>, click the land and drag its corners.</p>`;
       $('#pName').onchange = (e) => { doc.name = e.target.value || 'Untitled Map'; commit(); };
       $('#pType').onchange = (e) => { doc.type = e.target.value; ui.kind = MAP_TYPES[doc.type].kind; baseDirty = true; buildLibrary(); commit(); needsDraw = true; };
@@ -1484,6 +1804,21 @@
       $('#pGridCol').onchange = () => commit();
       $('#pGridOp').oninput = (e) => { doc.grid.opacity = +e.target.value; needsDraw = true; };
       $('#pGridOp').onchange = () => commit();
+      // coastline & colours
+      let coastT;
+      const coastSet = (key, val) => { doc.coast[key] = val; clearTimeout(coastT); coastT = setTimeout(() => { baseDirty = true; needsDraw = true; }, 120); };
+      $('#cRings').oninput = (e) => { coastSet('rings', +e.target.value); $('#cRingsV').textContent = e.target.value; };
+      $('#cGap').oninput = (e) => coastSet('gap', +e.target.value);
+      $('#cWidth').oninput = (e) => coastSet('width', +e.target.value);
+      $('#cSea').oninput = (e) => coastSet('sea', e.target.value);
+      $('#cLand').oninput = (e) => coastSet('land', e.target.value);
+      for (const id of ['#cRings', '#cGap', '#cWidth', '#cSea', '#cLand']) $(id).onchange = () => commit();
+      $('#cSeaR').onclick = () => { doc.coast.sea = null; baseDirty = true; commit(); renderProps(); };
+      $('#cLandR').onclick = () => { doc.coast.land = null; baseDirty = true; commit(); renderProps(); };
+      // map look
+      const lk = (id, key) => { $(id).oninput = (e) => { doc.look[key] = +e.target.value; needsDraw = true; }; $(id).onchange = () => commit(); };
+      lk('#lkBright', 'bright'); lk('#lkContrast', 'contrast'); lk('#lkSat', 'sat'); lk('#lkHue', 'hue'); lk('#lkSepia', 'sepia'); lk('#lkVig', 'vignette');
+      $('#lkReset').onclick = () => { doc.look = { bright: 100, contrast: 100, sat: 100, hue: 0, sepia: 0, vignette: 0 }; commit(); renderProps(); needsDraw = true; };
       bindCmdButtons(el);
       return;
     }
@@ -1491,7 +1826,8 @@
       el.innerHTML = `<p><b>${sel.length}</b> objects selected</p>
         <div class="btnrow"><button id="mScaleDn">Smaller</button><button id="mScaleUp">Larger</button><button id="mFlip">Flip</button><button id="mRandRot">Random tilt</button></div>
         <div class="btnrow"><button id="mFront">To front</button><button id="mBack">To back</button><button id="mDup">Duplicate</button><button class="danger" id="mDel">Delete ${sel.length}</button></div>
-        <div class="btnrow"><button id="mCopy">Copy</button><button id="mCut">Cut</button><button id="mPaste" ${clipboard ? '' : 'disabled'}>Paste</button></div>`;
+        <div class="btnrow"><button id="mCopy">Copy</button><button id="mCut">Cut</button><button id="mPaste" ${clipboard ? '' : 'disabled'}>Paste</button></div>
+        <div class="btnrow"><button id="mShadow">Add drop shadow</button><button id="mNoFx">Remove effects</button></div>`;
       const each = (fn) => { sel.forEach(fn); commit(); needsDraw = true; };
       $('#mScaleDn').onclick = () => each((o) => { if (o.t !== 'line') o.s = clamp(o.s * 0.9, 0.05, 20); });
       $('#mScaleUp').onclick = () => each((o) => { if (o.t !== 'line') o.s = clamp(o.s * 1.1, 0.05, 20); });
@@ -1499,6 +1835,8 @@
       $('#mRandRot').onclick = () => each((o) => { if (o.t !== 'line') o.r = Math.round((Math.random() * 2 - 1) * 12); });
       $('#mFront').onclick = () => reorder('front'); $('#mBack').onclick = () => reorder('back');
       $('#mDup').onclick = duplicateSelection;
+      $('#mShadow').onclick = () => each((o) => { if (o.t !== 'line') { o.ef = o.ef || {}; o.ef.shadow = true; } });
+      $('#mNoFx').onclick = () => each((o) => { delete o.ef; });
       $('#mCopy').onclick = () => copySelection(); $('#mCut').onclick = () => copySelection(true); $('#mPaste').onclick = pasteClipboard;
       $('#mDel').onclick = () => { deleteIds(sel.map((o) => o.id)); commit(); refreshPanels(); needsDraw = true; };
       return;
@@ -1517,6 +1855,13 @@
       h += propRow('Spacing', `<input type="range" id="pSpacing" min="-2" max="40" value="${o.spacing}">`);
       h += propRow('Curve', `<input type="range" id="pCurve" min="-100" max="100" value="${o.curve}">`);
     }
+    if (o.t === 'shape') {
+      const opt = (obj, cur) => Object.entries(obj).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v}</option>`).join('');
+      h += `<div class="row"><b style="flex:1">${SHAPE_KINDS[o.kind] || 'Shape'}</b></div>`;
+      h += propRow('Floor', `<select id="pSFill">${opt({ ...MT.TEXTURES, none: 'None (walls only)' }, o.fill)}</select>`);
+      h += propRow('Wall', `<select id="pSWall">${opt(WALL_KINDS, o.wall)}</select>`);
+      h += propRow('Wall width', `<input type="range" id="pSWW" min="2" max="40" value="${o.wallW}">`);
+    }
     if (o.t === 'line') {
       h += propRow('Kind', `<select id="pLKind">${Object.entries(LINE_KINDS).map(([k, v]) => `<option value="${k}" ${k === o.kind ? 'selected' : ''}>${v}</option>`).join('')}</select>`);
       h += propRow('Width', `<input type="range" id="pLW" min="1" max="40" value="${o.w}">`);
@@ -1526,6 +1871,17 @@
       h += propRow('Rotation', `<input type="range" id="pR" min="-180" max="180" value="${Math.round(o.r)}"><input type="number" id="pRn" value="${Math.round(o.r)}" style="width:62px">`);
     }
     h += propRow('Opacity', `<input type="range" id="pO" min="0.05" max="1" step="0.05" value="${o.o ?? 1}">`);
+    if (o.t !== 'line') {
+      const e = o.ef || {};
+      h += `<details class="fxbox" ${o.ef ? 'open' : ''}><summary>Effects</summary>
+        <div class="btnrow"><label class="chk"><input type="checkbox" id="fxShadow" ${e.shadow ? 'checked' : ''}> Drop shadow</label>
+        <label class="chk"><input type="checkbox" id="fxGlow" ${e.glow ? 'checked' : ''}> Glow</label><input type="color" id="fxGlowCol" value="${e.glowColor || '#ffd84a'}" title="Glow colour"></div>
+        ${o.t !== 'text' ? `${propRow('Hue', `<input type="range" id="fxHue" min="-180" max="180" value="${e.hue || 0}">`)}
+        ${propRow('Brightness', `<input type="range" id="fxBright" min="40" max="160" value="${e.bright ?? 100}">`)}
+        ${propRow('Saturation', `<input type="range" id="fxSat" min="0" max="200" value="${e.sat ?? 100}">`)}
+        ${propRow('Tint', `<input type="color" id="fxTint" value="${e.tint || '#c4553f'}"><input type="range" id="fxTintAmt" min="0" max="0.9" step="0.05" value="${e.tintAmt || 0}">`)}` : ''}
+        <div class="btnrow"><button class="mini" id="fxReset">Reset effects</button></div></details>`;
+    }
     h += `<div class="btnrow">${o.t === 'asset' ? '<button id="pFlip">Flip ⇋</button>' : ''}<button id="pFront">Front</button><button id="pUp">▲</button><button id="pDown">▼</button><button id="pBack">Back</button></div>`;
     h += `<div class="btnrow"><button id="pCopy" title="Ctrl+C">Copy</button><button id="pCut" title="Ctrl+X">Cut</button><button id="pPaste" title="Ctrl+V" ${clipboard ? '' : 'disabled'}>Paste</button></div>`;
     h += `<div class="btnrow"><button id="pDup">Duplicate</button><button class="danger" id="pDel">Delete</button></div>`;
@@ -1540,6 +1896,12 @@
     live('#pBold', 'bold'); live('#pItal', 'italic'); live('#pUpper', 'upper'); live('#pHalo', 'halo');
     live('#pSpacing', 'spacing', Number); live('#pCurve', 'curve', Number);
     live('#pLKind', 'kind'); live('#pLW', 'w', Number);
+    const fx = (id, key, conv = (v) => v) => { const n = $(id); if (!n) return;
+      n.oninput = (ev) => { o.ef = o.ef || {}; o.ef[key] = conv(ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value); needsDraw = true; };
+      n.onchange = (ev) => { n.oninput(ev); commit(); }; };
+    fx('#fxShadow', 'shadow'); fx('#fxGlow', 'glow'); fx('#fxGlowCol', 'glowColor'); fx('#fxHue', 'hue', Number); fx('#fxBright', 'bright', Number); fx('#fxSat', 'sat', Number); fx('#fxTint', 'tint'); fx('#fxTintAmt', 'tintAmt', Number);
+    $('#fxReset') && ($('#fxReset').onclick = () => { delete o.ef; commit(); renderProps(); needsDraw = true; });
+    live('#pSFill', 'fill'); live('#pSWall', 'wall'); live('#pSWW', 'wallW', Number);
     live('#pX', 'x', Number); live('#pY', 'y', Number);
     live('#pS', 's', Number, () => { $('#pSn').value = o.s.toFixed(2); }); live('#pSn', 's', (v) => clamp(+v || 1, 0.05, 20), () => { $('#pS').value = o.s; });
     live('#pR', 'r', Number, () => { $('#pRn').value = o.r; }); live('#pRn', 'r', (v) => clamp(+v || 0, -180, 180), () => { $('#pR').value = o.r; });
@@ -1566,7 +1928,7 @@
     const el = $('#usedList');
     const groups = new Map();
     for (const o of doc.objects) {
-      const key = o.t === 'asset' ? `a:${o.a}` : o.t === 'text' ? 't:text' : `l:${o.kind}`;
+      const key = o.t === 'asset' ? `a:${o.a}` : o.t === 'text' ? 't:text' : o.t === 'shape' ? `s:${o.kind}` : `l:${o.kind}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(o);
     }
@@ -1577,6 +1939,7 @@
       let name, thumb = '';
       if (key.startsWith('a:')) { const k = key.slice(2); name = assetInfo(k)?.name || 'Missing asset'; thumb = `<img src="${esc(assetSrc(k) || '')}" alt="">`; }
       else if (key === 't:text') { name = 'Text labels'; thumb = '<span class="glyph" style="font-family:\'IM Fell English\'">A</span>'; }
+      else if (key.startsWith('s:')) { name = SHAPE_KINDS[key.slice(2)] || 'Shape'; thumb = '<span class="glyph">▭</span>'; }
       else { name = `${LINE_KINDS[key.slice(2)] || 'Line'}`; thumb = '<span class="glyph">〰</span>'; }
       const allSel = items.every((o) => selection.has(o.id));
       const open = openGroups.has(key);
@@ -1623,6 +1986,7 @@
     return window.confirm(`${message}\n${detail || ''}`);
   }
 
+  let recovery = null;
   function newMapDialog(first = false) {
     let type = 'world', style = doc?.style || 'parchment';
     const render = () => {
@@ -1638,11 +2002,13 @@
         <div class="row"><label>Width × Height</label><input type="number" id="nW" value="${T.sizes[0][0]}" min="200" max="8000"> × <input type="number" id="nH" value="${T.sizes[0][1]}" min="200" max="8000"> px</div>
         <div class="row"><label>Name</label><input type="text" id="nName" value="${type === 'battle' ? 'Battle Map' : type === 'town' ? 'Town Map' : 'The Known World'}"></div>
         <p class="muted">Your map starts as open ocean. Use the <b>Land</b> brush to paint land in any shape, and the <b>Ocean</b> brush to carve it back into sea.</p>
-        <div class="actions">${first ? '<button data-cmd="open">Open existing…</button>' : '<button id="nCancel">Cancel</button>'}<button class="primary" id="nCreate">Create map</button></div>`, (d) => {
+        <div class="actions">${first ? `<button class="linkbtn" data-cmd="guide">New here? Read the User Guide</button><button class="linkbtn" id="nExample" style="margin-right:auto">Explore an example map</button>${recovery ? `<button id="nRecover" title="Saved automatically ${esc(recovery.when)}">Recover unsaved map</button>` : ''}<button data-cmd="open">Open existing…</button>` : '<button id="nCancel">Cancel</button>'}<button class="primary" id="nCreate">Create map</button></div>`, (d) => {
         d.querySelectorAll('[data-type]').forEach((c) => c.onclick = () => { type = c.dataset.type; render(); });
         d.querySelectorAll('[data-style]').forEach((c) => c.onclick = () => { style = c.dataset.style; d.querySelectorAll('[data-style]').forEach((x) => x.classList.toggle('on', x === c)); });
         d.querySelector('#nPreset').onchange = (e) => { if (e.target.value !== 'custom') { const [w, h] = e.target.value.split('x'); d.querySelector('#nW').value = w; d.querySelector('#nH').value = h; } };
         const c = d.querySelector('#nCancel'); if (c) c.onclick = closeDialog;
+        const ex = d.querySelector('#nExample'); if (ex) ex.onclick = () => { closeDialog(); newMap({ type: 'world', style, start: 'example', name: 'The Known World', seed: 7 }); };
+        const rc = d.querySelector('#nRecover'); if (rc) rc.onclick = async () => { closeDialog(); try { await deserialize(recovery.data); markDirty(); toast('Recovered the map that was saved automatically. Save it to keep it.', 'ok'); } catch (err) { toast('Could not recover the autosaved map: ' + err.message, 'warn'); } };
         bindCmdButtons(d);
         d.querySelector('#nCreate').onclick = () => {
           const w = clamp(+d.querySelector('#nW').value || 2000, 200, 8000), h = clamp(+d.querySelector('#nH').value || 1400, 200, 8000);
@@ -1660,7 +2026,7 @@
       <div class="row"><label>Width × Height</label><input type="number" id="rW" value="${doc.width}" min="200" max="8000"> × <input type="number" id="rH" value="${doc.height}" min="200" max="8000"> px</div>
       <div class="row"><label>Mode</label><select id="rMode"><option value="canvas">Extend / crop the canvas</option><option value="scale">Scale everything to fit</option></select></div>
       <div class="row"><label>Anchor</label><select id="rAnchor"><option value="c">Centre</option><option value="tl">Top-left</option><option value="t">Top</option><option value="l">Left</option><option value="br">Bottom-right</option></select></div>
-      <p class="muted">New canvas area is filled with ${doc.type === 'world' ? 'sea' : 'ground'}.</p>
+      <p class="muted">New space added to the map starts as open sea; paint land into it as usual.</p>
       <div class="actions"><button id="rCancel">Cancel</button><button class="primary" id="rOk">Apply</button></div>`, (d) => {
       d.querySelector('#rCancel').onclick = closeDialog;
       d.querySelector('#rOk').onclick = () => {
@@ -1671,7 +2037,7 @@
   }
   function resizeMap(W, H, mode, anchor) {
     settleLand();
-    const oldW = doc.width, oldH = doc.height, oldLand = landMask, oldPath = pathMask;
+    const oldW = doc.width, oldH = doc.height, oldLand = landMask, oldPath = pathMask, oldTex = texMasks;
     let dx = 0, dy = 0, sx = 1, sy = 1;
     if (mode === 'scale') { sx = W / oldW; sy = H / oldH; }
     else {
@@ -1680,13 +2046,14 @@
       if (anchor === 'br') { dx = W - oldW; dy = H - oldH; }
     }
     allocMasks(W, H);
-    if (doc.type !== 'world' && mode !== 'scale') fillMask(landMask, true);
     const draw = (dst, src, clearFirst) => {
       const c = dst.getContext('2d');
       if (clearFirst && mode !== 'scale') c.clearRect(dx * maskScale, dy * maskScale, oldW * maskScale, oldH * maskScale);
       c.drawImage(src, dx * maskScale, dy * maskScale, oldW * sx * maskScale, oldH * sy * maskScale);
     };
     draw(landMask, oldLand, true); draw(pathMask, oldPath, false);
+    doc.width = W; doc.height = H;   // (set early so the new texture masks get the new size)
+    for (const [t, m] of Object.entries(oldTex)) texMask(t, true).getContext('2d').drawImage(m, dx * texScale, dy * texScale, oldW * sx * texScale, oldH * sy * texScale);
     const avg = Math.sqrt(sx * sy);
     for (const o of doc.objects) {
       if (o.t === 'line') { o.pts = o.pts.map(([x, y]) => [x * sx + dx, y * sy + dy]); o.w *= avg; }
@@ -1698,11 +2065,15 @@
   }
 
   function exportDialog(fmt) {
-    const maxS = Math.sqrt(64e6 / (doc.width * doc.height));
+    const maxS = Math.sqrt(70e6 / (doc.width * doc.height)), long = Math.max(doc.width, doc.height);
+    const opts = [[0.5, '0.5×'], [1, '1× (map size)'], [2048 / long, '2K'], [4096 / long, '4K'], [8192 / long, '8K'], [2, '2×']]
+      .filter(([sc]) => sc <= maxS + 1e-6).sort((a, b) => a[0] - b[0])
+      .filter(([sc], i, arr) => i === 0 || Math.abs(sc - arr[i - 1][0]) > 0.01 || arr[i - 1][1].length > 3);
     openDialog(`<h2>Export ${fmt.toUpperCase()}</h2>
-      <div class="row"><label>Resolution</label><select id="eScale">
-        ${[0.5, 1, 1.5, 2].filter((s) => s <= maxS + 0.01).map((s) => `<option value="${s}" ${s === 1 ? 'selected' : ''}>${s}× — ${Math.round(doc.width * s)} × ${Math.round(doc.height * s)} px</option>`).join('')}
+      <div class="row"><label>Size</label><select id="eScale">
+        ${opts.map(([sc, lab]) => `<option value="${sc}" ${sc === 1 ? 'selected' : ''}>${lab} — ${Math.round(doc.width * sc)} × ${Math.round(doc.height * sc)} px</option>`).join('')}
       </select></div>
+      <p class="muted" style="margin:4px 0 0">2K, 4K and 8K set the longest side to 2048, 4096 or 8192 pixels. 8K suits large prints.</p>
       ${fmt === 'jpg' ? '<div class="row"><label>Quality</label><input type="range" id="eQ" min="0.5" max="1" step="0.02" value="0.92"></div>' : ''}
       <div class="row"><label>Include grid</label><input type="checkbox" id="eGrid" ${doc.grid.type !== 'none' ? 'checked' : ''}></div>
       <div class="actions"><button id="eCancel">Cancel</button><button class="primary" id="eGo">Export</button></div>`, (d) => {
@@ -1720,17 +2091,20 @@
     const hiBase = MT.renderBase(baseOpts(ts));
     const cv = document.createElement('canvas'); cv.width = Math.round(doc.width * s); cv.height = Math.round(doc.height * s);
     const ctx = cv.getContext('2d'); ctx.scale(s, s);
-    renderMapContent(ctx, hiBase, { grid });
+    renderMapContent(ctx, hiBase, { grid, texLayer: renderTextures(Math.min(s, Math.sqrt(24e6 / (doc.width * doc.height)))) });
     return cv;
   }
   async function exportImage(fmt, s = 1, q = 0.92, grid = true) {
     settleLand();
     status('Rendering export…');
     await new Promise((r) => setTimeout(r, 30));
-    const cv = await renderExportCanvas(s, grid);
-    const url = cv.toDataURL(fmt === 'jpg' ? 'image/jpeg' : 'image/png', q);
-    if (api) { const p = await api.exportImage(url, fmt); status(p ? `Exported to ${p}` : ''); }
-    else { const a = document.createElement('a'); a.href = url; a.download = `${doc.name}.${fmt}`; a.click(); status('Exported'); }
+    let cv = await renderExportCanvas(s, grid);
+    if (lookFilter() !== 'none') { const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height; const x2 = c2.getContext('2d'); x2.filter = lookFilter(); x2.drawImage(cv, 0, 0); cv = c2; }
+    if (fmt === 'jpg') { const c3 = document.createElement('canvas'); c3.width = cv.width; c3.height = cv.height; const x3 = c3.getContext('2d'); x3.fillStyle = '#fff'; x3.fillRect(0, 0, c3.width, c3.height); x3.drawImage(cv, 0, 0); cv = c3; }
+    const blob = await new Promise((res) => cv.toBlob(res, fmt === 'jpg' ? 'image/jpeg' : 'image/png', q));
+    if (api) { const bytes = new Uint8Array(await blob.arrayBuffer()); const p = await api.exportImage(bytes, fmt); status(p ? `Exported ${cv.width} × ${cv.height} px to ${p}` : ''); }
+    else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${doc.name}.${fmt}`; a.click(); status('Exported'); }
+    return { w: cv.width, h: cv.height, bytes: blob.size };
   }
 
   function creditsDialog() {
@@ -1750,14 +2124,15 @@
       <div class="actions"><button class="primary" id="cOk">Close</button></div>`, (d) => { d.querySelector('#cOk').onclick = closeDialog; });
   }
   function shortcutsDialog() {
-    const rows = [['V / S / B / E / P / L / T / H', 'Select · Stamp · Land brush · Ocean brush · Ground · Lines · Text · Pan'], ['Space + drag, middle mouse', 'Pan'], ['Mouse wheel', 'Zoom'], ['Ctrl+= / Ctrl+- / Ctrl+0', 'Zoom in / out / fit (or the − + buttons and % box at the top)'], ['G', 'Fill bucket'], ['Shift+wheel / Alt+wheel', 'Scroll sideways / up and down (or drag the scroll bars)'], ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / Cut / Paste (pastes at the mouse, same size and rotation)'], ['Ctrl+D', 'Duplicate'], ['Alt + drag', 'Duplicate while moving'], ['Delete', 'Delete selection'], ['R / Shift+R', 'Rotate ±15°'], ['F', 'Flip asset'], ['Click land (Select tool, Land layer)', 'Select a whole landmass to move, resize or rotate'], ['1 / 2 / 3', 'Make Land / Assets / Text the active layer'], ['[ / ]', 'Brush size, or scale selection'], ['Arrows (+Shift)', 'Nudge 1px (10px)'], ['Shift while rotating', 'Snap to 15°'], ['Alt while painting', 'Swap Land ↔ Ocean brush']];
+    const rows = [['F1', 'Open the User Guide'], ['V / S / B / E / G / X / P / L / U / T / H', 'Select · Stamp · Land · Ocean · Fill · Texture · Ground · Lines · Shapes · Text · Pan'], ['Enter / Backspace (Shapes)', 'Finish a polygon / remove its last corner'], ['Space + drag, middle mouse', 'Pan'], ['Mouse wheel', 'Zoom'], ['Ctrl+= / Ctrl+- / Ctrl+0', 'Zoom in / out / fit (or the − + buttons and % box at the top)'], ['G', 'Fill bucket'], ['Shift+wheel / Alt+wheel', 'Scroll sideways / up and down (or drag the scroll bars)'], ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / Cut / Paste (pastes at the mouse, same size and rotation)'], ['Ctrl+D', 'Duplicate'], ['Alt + drag', 'Duplicate while moving'], ['Delete', 'Delete selection'], ['R / Shift+R', 'Rotate ±15°'], ['F', 'Flip asset'], ['Click land (Select tool, Land layer)', 'Select a whole landmass to move, resize or rotate'], ['1 / 2 / 3', 'Make Land / Assets / Text the active layer'], ['[ / ]', 'Brush size, or scale selection'], ['Arrows (+Shift)', 'Nudge 1px (10px)'], ['Shift while rotating', 'Snap to 15°'], ['Alt while painting', 'Swap Land ↔ Ocean brush']];
     openDialog(`<h2>Keyboard shortcuts</h2><table>${rows.map(([k, v]) => `<tr><td><kbd>${k}</kbd></td><td>${v}</td></tr>`).join('')}</table><div class="actions"><button class="primary" id="kOk">Close</button></div>`, (d) => { d.querySelector('#kOk').onclick = closeDialog; });
   }
 
   // ------------------------------------------------------------------ save / open
   function serialize() {
     settleLand();
-    return JSON.stringify({ ...doc, landMask: landMask.toDataURL('image/png'), pathMask: pathMask.toDataURL('image/png') });
+    const textures = Object.fromEntries(Object.entries(texMasks).map(([t, m]) => [t, m.toDataURL('image/png')]));
+    return JSON.stringify({ ...doc, landMask: landMask.toDataURL('image/png'), pathMask: pathMask.toDataURL('image/png'), textures });
   }
   async function loadImageToMask(mask, url) {
     const im = new Image(); im.src = url; await im.decode();
@@ -1768,10 +2143,11 @@
     const d = JSON.parse(text);
     if (d.app !== 'Pocket-Mapp-Creator' && d.app !== 'Mapp-Creator') throw new Error('Not a Pocket-Mapp-Creator map file');
     d.app = 'Pocket-Mapp-Creator';
-    const { landMask: lm, pathMask: pm, ...rest } = d;
+    const { landMask: lm, pathMask: pm, textures, ...rest } = d;
     doc = Object.assign(makeDoc({ type: rest.type }), rest);
     allocMasks(doc.width, doc.height);
     await loadImageToMask(landMask, lm); await loadImageToMask(pathMask, pm);
+    for (const [t, url] of Object.entries(textures || {})) if (MT.TEXTURES[t]) await loadImageToMask(texMask(t, true), url);
     selection.clear(); ui.kind = MAP_TYPES[doc.type]?.kind || 'all';
     syncTopbar(); buildLibrary(); resetHistory(); baseDirty = true; zoomFit(); refreshPanels();
   }
@@ -1779,7 +2155,7 @@
     const data = serialize();
     if (api) {
       const p = await api.saveProject(data, as ? null : filePath);
-      if (p) { filePath = p; dirtyFlag = false; document.title = `Pocket-Mapp-Creator — ${doc.name}`; status(`Saved ${p}`); }
+      if (p) { filePath = p; dirtyFlag = false; api.autosaveClear && api.autosaveClear(); document.title = `Pocket-Mapp-Creator — ${doc.name}`; status(`Saved ${p}`); }
     } else {
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' })); a.download = `${doc.name}.mapp`; a.click();
     }
@@ -1817,9 +2193,20 @@
     copy: () => typingNow() ? api?.nativeEdit('copy') : copySelection(), cut: () => typingNow() ? api?.nativeEdit('cut') : copySelection(true), paste: () => typingNow() ? api?.nativeEdit('paste') : pasteClipboard(),
     duplicate: duplicateSelection, selectAll: () => typingNow() ? api?.nativeEdit('selectAll') : selectAll(), resize: resizeDialog,
     zoomIn: () => zoomStep(1), zoomOut: () => zoomStep(-1), zoom100: () => setZoom(1),
-    zoomFit, importAsset: importAssets, credits: creditsDialog, shortcuts: shortcutsDialog
+    zoomFit, importAsset: importAssets, credits: creditsDialog, shortcuts: shortcutsDialog,
+    guide: () => openGuide()
   };
-  function typingNow() { return /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) && document.activeElement.type !== 'range' && document.activeElement.type !== 'checkbox'; }
+  function openGuide(section) {
+    if (api && api.openGuide) api.openGuide(section);
+    else window.open(`guide/index.html${section ? '#' + section : ''}`, 'mappguide');
+  }
+  function typingNow() {
+    // only real text entry pauses the map's shortcuts; checkboxes, sliders, colour pickers and lists don't
+    const a = document.activeElement; if (!a) return false;
+    if (a.tagName === 'TEXTAREA') return true;
+    if (a.tagName !== 'INPUT') return false;
+    return !['range', 'checkbox', 'color', 'button', 'radio'].includes(a.type);
+  }
   function bindCmdButtons(root) { root.querySelectorAll('[data-cmd]').forEach((b) => b.onclick = () => COMMANDS[b.dataset.cmd]?.()); }
   bindCmdButtons(document);
   $('#zoomInput').addEventListener('keydown', (e) => {
@@ -1835,6 +2222,7 @@
     renderLayers();
     $('#styleSelect').value = doc.style;
     $('#gridToggle').checked = doc.grid.type !== 'none';
+    $('#snapToggle').checked = !!doc.grid.snap;
     $('#borderToggle').checked = !!doc.border;
     document.title = `Pocket-Mapp-Creator — ${doc.name}`;
   }
@@ -1845,6 +2233,7 @@
     for (const o of doc.objects) if (o.t === 'text' && o.color === INK[prev]) o.color = INK[doc.style];
     baseDirty = true; buildLibrary(); commit(); scheduleUsedList(); needsDraw = true;
   };
+  $('#snapToggle').onchange = (e) => { doc.grid.snap = e.target.checked; if (e.target.checked && doc.grid.type === 'none') { doc.grid.type = 'square'; $('#gridToggle').checked = true; } commit(); needsDraw = true; status(e.target.checked ? 'Snap to grid on: rooms snap to grid lines, assets to the middle of squares.' : 'Snap to grid off.'); };
   $('#gridToggle').onchange = (e) => { doc.grid.type = e.target.checked ? (doc.grid.type === 'none' ? 'square' : doc.grid.type) : 'none'; if (e.target.checked && doc.grid.type === 'none') doc.grid.type = 'square'; commit(); renderProps(); needsDraw = true; };
   $('#borderToggle').onchange = (e) => { doc.border = e.target.checked; commit(); needsDraw = true; };
 
@@ -1913,7 +2302,13 @@
     newMap({ type: 'world', style: 'parchment', start: 'sea', name: 'The Known World' });
     setTool('land');
     loop();
+    if (api && api.autosaveRead) { try { recovery = await api.autosaveRead(); } catch (_) { recovery = null; } }
     setTimeout(() => newMapDialog(true), 50);
+    // autosave every minute while there are unsaved changes (not mid-drag or mid landmass edit)
+    setInterval(() => {
+      if (!api || !api.autosaveWrite || !dirtyFlag || dragState || landSel || painting || texPainting) return;
+      try { api.autosaveWrite(serialize()); } catch (_) { /* best effort */ }
+    }, 60000);
   }
 
   // automated screenshot test (MAPP_TEST=<dir>)
@@ -2034,7 +2429,68 @@
       window.__fill = `${window.__gap} fillGrew=${(f1 / f0).toFixed(3)} leakRefused=${g1 === g0} waterMode=${f2 < f0} undo=${f3 === g1}`;
       setTool('select');
     }
-    document.title = `TESTDONE ${window.__fill} ${window.__clip} ${window.__land} label=${window.__label} landStart=${window.__landStart} objs=${before} pines=${pineCount} rotated=${rotated} undoR=${afterUndo} redoR=${afterRedo} sel=${castle.a} png=${window.__exportPng}`;
+    // shapes: rooms drawn on a battle map, furnished with interior assets
+    {
+      newMap({ type: 'battle', style: 'colour', name: 'Tavern', width: 1400, height: 1400 });
+      fillMask(landMask, true); baseDirty = true; await wait(300);
+      const r2 = stage.getBoundingClientRect();
+      const ev2 = (type, mx, my, extra = {}) => { const sx = r2.left + view.ox + mx * view.zoom, sy = r2.top + view.oy + my * view.zoom; stage.dispatchEvent(new PointerEvent(type, { clientX: sx, clientY: sy, button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerId: 1, bubbles: true, detail: 1, ...extra })); };
+      setTool('shape'); ui.shapeKind = 'rect'; ui.shapeFill = 'wood'; ui.shapeWall = 'stone'; ui.shapeWallW = 20;
+      ev2('pointerdown', 140, 140); ev2('pointermove', 600, 400); ev2('pointermove', 840, 700); ev2('pointerup', 840, 700);
+      ui.shapeFill = 'stone'; ev2('pointerdown', 840, 300); ev2('pointermove', 1260, 700); ev2('pointerup', 1260, 700);
+      ui.shapeKind = 'ellipse'; ui.shapeFill = 'cobbles'; ui.shapeWall = 'wood'; ui.shapeWallW = 12; ev2('pointerdown', 200, 820); ev2('pointermove', 620, 1240); ev2('pointerup', 620, 1240);
+      ui.shapeKind = 'poly'; ui.shapeFill = 'rock'; ui.shapeWall = 'ink';
+      for (const [x, y] of [[760, 860], [1180, 820], [1280, 1060], [1100, 1280], [800, 1200]]) { ev2('pointerdown', x, y); ev2('pointerup', x, y); }
+      ev2('pointerdown', 760, 860); ev2('pointerup', 760, 860);   // click the first point to close
+      const shapes = doc.objects.filter((o) => o.t === 'shape');
+      for (const [a, x, y, sc] of [['fireplace', 480, 200, 1.2], ['bar-counter', 300, 600, 1.4], ['tavern-table', 300, 380, 1], ['tavern-table', 560, 420, 1], ['bard-stage', 720, 560, 1], ['stairs', 1180, 380, 0.9], ['altar', 1050, 560, 1], ['wall-torch', 900, 360, 0.8], ['spike-pit', 1000, 1000, 1.1], ['treasure-pile', 1120, 1120, 1], ['giant-spider', 880, 1080, 1.1], ['cobweb', 820, 900, 1], ['rubble', 1180, 960, 1], ['campfire', 410, 1030, 1]]) addAsset(a, x, y, { s: sc });
+      // copy a room and resize it: shapes behave like other objects
+      selection.clear(); selection.add(shapes[0].id); copySelection(); hoverPt = { x: 700, y: 700 }; pasteClipboard(); const pasted = findObj([...selection][0]); pasted.s = 0.4; hoverPt = null;
+      baseDirty = true; commit(); setTool('select'); await wait(1500); await whenImagesReady(); await shot('14-shapes-tavern');
+      window.__shapes = `shapes=${doc.objects.filter((o) => o.t === 'shape').length} kinds=${shapes.map((o) => o.kind).join('+')} polyPts=${(shapes.find((o) => o.kind === 'poly') || {}).pts?.length}`;
+    }
+    // texture brush: paint, undo, recolour with style, move with landmass, save + reload
+    {
+      newMap({ type: 'world', style: 'colour', name: 'Textures', width: 2000, height: 1400 }); await wait(300);
+      const r3 = stage.getBoundingClientRect();
+      const ev3 = (type, mx, my) => { const sx = r3.left + view.ox + mx * view.zoom, sy = r3.top + view.oy + my * view.zoom; stage.dispatchEvent(new PointerEvent(type, { clientX: sx, clientY: sy, button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerId: 1, bubbles: true, detail: 1 })); };
+      const stroke3 = (pts) => { ev3('pointerdown', ...pts[0]); for (const q of pts.slice(1)) ev3('pointermove', ...q); ev3('pointerup', ...pts[pts.length - 1]); };
+      setTool('land'); ui.brush = 120; const ring = []; for (let a = 0; a <= 6.4; a += 0.08) ring.push([1000 + Math.cos(a) * 560, 700 + Math.sin(a) * 380]); stroke3(ring);
+      setTool('fill'); ev3('pointerdown', 1000, 700); ev3('pointerup', 1000, 700);
+      setTool('texture'); ui.brush = 260; ui.texType = 'grass'; stroke3([[650, 650], [900, 600], [1150, 680], [1350, 640]]);
+      ui.texType = 'rock'; ui.brush = 200; stroke3([[1250, 480], [1380, 560], [1450, 700]]);
+      ui.texType = 'snow'; ui.brush = 150; stroke3([[1300, 470], [1400, 540]]);
+      ui.texType = 'sand'; ui.brush = 120; const coast = []; for (let a = 1.6; a <= 3.4; a += 0.05) coast.push([1000 + Math.cos(a) * 520, 700 + Math.sin(a) * 350]); stroke3(coast);
+      ui.texType = 'dirt'; ui.brush = 70; stroke3([[700, 820], [900, 780], [1100, 860]]);
+      const used1 = Object.keys(texMasks).sort().join(',');
+      const alphaSum = (m) => { const d = m.getContext('2d').getImageData(0, 0, m.width, m.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) n += d[i]; return n; };
+      const dirt0 = alphaSum(texMasks.dirt); undo(); const dirtUndo = texMasks.dirt ? alphaSum(texMasks.dirt) : 0; redo(); const dirtRedo = alphaSum(texMasks.dirt);
+      await wait(800); await shot('15-textures-colour');
+      $('#styleSelect').value = 'parchment'; $('#styleSelect').onchange({ target: $('#styleSelect') }); await wait(2500); await shot('16-textures-parchment');
+      // move + shrink the island: its textures go with it
+      const gx0 = alphaSum(texMasks.grass);
+      setTool('select'); setActiveLayer('land'); ev3('pointerdown', 1000, 700); ev3('pointerup', 1000, 700); setLandScale(0.6); landSel.dx = -300; applyLandItems(); settleLand(); const gx1 = alphaSum(texMasks.grass);
+      const data = serialize(); await deserialize(data); await wait(1500);
+      const used2 = Object.keys(texMasks).sort().join(','); const gx2 = alphaSum(texMasks.grass);
+      await shot('17-textures-moved-reloaded');
+      window.__tex = `textures=${used1} undo=${dirtUndo < dirt0 * 0.2} redo=${dirtRedo === dirt0} shrunk=${(gx1 / gx0).toFixed(2)} reload=${used2 === used1 && Math.abs(gx2 - gx1) / gx1 < 0.05}`;
+    }
+    // effects, look, coastline, snap, export sizes
+    {
+      newMap({ type: 'battle', style: 'colour', name: 'FX', width: 1400, height: 1400 }); fillMask(landMask, true);
+      doc.grid.snap = true; await wait(200);
+      const p0 = placeStamp(333, 451); const snapped = `${p0.x},${p0.y}`;
+      const a1 = addAsset('castle-keep', 700, 600, { s: 2 }); a1.ef = { shadow: true, hue: 90, glow: true, glowColor: '#ff3366' };
+      const a2 = addAsset('tree-top', 1000, 600, { s: 1.6 }); a2.ef = { tint: '#3366ff', tintAmt: 0.5 };
+      const t1 = addText(700, 1000, { text: 'Glowing Text', size: 90 }); t1.ef = { glow: true, glowColor: '#40c0ff', shadow: true };
+      doc.coast = { rings: 6, gap: 10, width: 3, sea: '#1e5a8a', land: '#c9b27a' }; doc.look = { bright: 105, contrast: 115, sat: 80, hue: 0, sepia: 30, vignette: 70 };
+      fillMask(landMask, false); const lc = landMask.getContext('2d'); lc.fillStyle = '#fff'; lc.beginPath(); lc.ellipse(700 * maskScale, 700 * maskScale, 520 * maskScale, 420 * maskScale, 0, 0, 7); lc.fill();
+      commit(); await wait(300); rebuildBase(true); needsDraw = true; await wait(600); await whenImagesReady(); await shot('18-effects-look');
+      // a full-size 8K export
+      const long = Math.max(doc.width, doc.height); const ex = await exportImage('png', 8192 / long, 1, true);
+      window.__fx = `snap=${snapped} export8k=${ex && ex.w}x${ex && ex.h} bytes=${ex && Math.round(ex.bytes / 1e6)}MB filter=${lookFilter().replace(/ /g, '|')}`;
+    }
+    document.title = `TESTDONE ${window.__fx} ${window.__tex} ${window.__shapes} ${window.__fill} ${window.__clip} ${window.__land} label=${window.__label} landStart=${window.__landStart} objs=${before} pines=${pineCount} rotated=${rotated} undoR=${afterUndo} redoR=${afterRedo} sel=${castle.a} png=${window.__exportPng}`;
   }
   boot();
 })();

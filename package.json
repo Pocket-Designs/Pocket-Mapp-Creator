@@ -9,10 +9,11 @@
   "scripts": {
     "start": "electron .",
     "assets": "node tools/generate-assets.js",
-    "dist": "electron-builder --publish never",
-    "dist:win": "electron-builder --win --publish never",
-    "dist:mac": "electron-builder --mac --publish never",
-    "dist:linux": "electron-builder --linux --publish never"
+    "dist": "npm run guide && electron-builder --publish never",
+    "dist:win": "npm run guide && electron-builder --win --publish never",
+    "dist:mac": "npm run guide && electron-builder --mac --publish never",
+    "dist:linux": "npm run guide && electron-builder --linux --publish never",
+    "guide": "node tools/build-guide.js"
   },
   "build": {
     "appId": "com.projecttechme.pocketmappcreator",
@@ -97,7 +98,8 @@
   },
   "devDependencies": {
     "electron": "^44.7.2",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "marked": "^18.1.2"
   },
   "homepage": "https://github.com/Projects-me-design/Pocket-Mapp-Creator",
   "repository": {

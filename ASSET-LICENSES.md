@@ -18,7 +18,7 @@ These icon files are **not** covered by the MIT Licence or the CC0 dedication in
 
 ## 1. Built-in map assets — CC0 1.0 (public domain)
 
-All 127 built-in assets (each supplied in three styles: Parchment, Full colour and Watercolour — 381 SVG files in `assets/`) are **original artwork** created for Pocket-Mapp-Creator by project-tech-me. They are drawn procedurally by `tools/generate-assets.js`; no third-party artwork was copied, traced or adapted.
+All 157 built-in assets (each supplied in three styles: Parchment, Full colour and Watercolour — 471 SVG files in `assets/`) are **original artwork** created for Pocket-Mapp-Creator by project-tech-me. They are drawn procedurally by `tools/generate-assets.js`; no third-party artwork was copied, traced or adapted.
 
 They are dedicated to the public domain under the **Creative Commons CC0 1.0 Universal** dedication:
 https://creativecommons.org/publicdomain/zero/1.0/
@@ -156,6 +156,36 @@ You may copy, modify and use them — including in commercial maps, books and ga
 | suspension-bridge | Suspension Bridge | Modern | World (side view) | CC0 1.0 | project-tech-me (original) |
 | cargo-ship | Cargo Ship | Modern | World (side view) | CC0 1.0 | project-tech-me (original) |
 | speedboat-top | Speedboat (top-down) | Modern | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| fireplace | Fireplace | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| bar-counter | Bar Counter | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| tavern-table | Tavern Table & Stools | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| long-table | Long Feast Table | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| bard-stage | Bard Stage | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| bookshelf | Bookshelf | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| weapon-rack | Weapon Rack | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| stairs | Stairs | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| trapdoor | Trapdoor | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| secret-door | Secret Door | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| hay-bale | Hay Bales | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| stable-stall | Stable Stall | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| cauldron | Cauldron | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| spike-pit | Spike Pit | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| prison-bars | Prison Bars | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| altar | Altar | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| sarcophagus | Sarcophagus | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| wall-torch | Wall Torch | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| cobweb | Cobweb | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| rubble | Rubble | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| treasure-pile | Treasure Pile | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| giant-spider | Giant Spider | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| house-top | House Roof (top-down) | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| city-block-top | City Block (top-down) | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| round-tower-top | Round Tower (top-down) | Fantasy | Battle (top-down) | CC0 1.0 | project-tech-me (original) |
+| row-houses | Row of Houses (3/4) | Fantasy | Town (3/4 view) | CC0 1.0 | project-tech-me (original) |
+| pagoda | Pagoda | Fantasy | Town (3/4 view) | CC0 1.0 | project-tech-me (original) |
+| torii-gate | Shrine Gate | Fantasy | Town (3/4 view) | CC0 1.0 | project-tech-me (original) |
+| stone-lantern | Stone Lantern | Fantasy | Town (3/4 view) | CC0 1.0 | project-tech-me (original) |
+| eastern-house | Curved-Roof House | Fantasy | Town (3/4 view) | CC0 1.0 | project-tech-me (original) |
 
 ## 2. Fonts — SIL Open Font License 1.1
 

@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pocket-Mapp-Creator — User Guide</title>
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+<nav id="side">
+  <div class="brand"><img src="../icon.png" alt=""> User Guide</div>
+  <input id="find" type="search" placeholder="Search the guide…" autocomplete="off">
+  <ol id="toc">
+    <li><a href="#1-installing-and-starting">Installing and starting</a></li>
+    <li><a href="#2-the-screen-at-a-glance">The screen at a glance</a></li>
+    <li><a href="#3-your-first-map-in-10-steps">Your first map in 10 steps</a></li>
+    <li><a href="#4-map-types-and-styles">Map types and styles</a></li>
+    <li><a href="#5-layers">Layers</a></li>
+    <li><a href="#6-working-with-land">Working with land</a></li>
+    <li><a href="#7-placing-and-editing-assets">Placing and editing assets</a></li>
+    <li><a href="#8-rivers-roads-and-borders">Rivers, roads and borders</a></li>
+    <li><a href="#9-rooms-textures-and-effects">Rooms, textures and effects</a></li>
+    <li><a href="#10-text-labels">Text labels</a></li>
+    <li><a href="#11-moving-around-the-map">Moving around the map</a></li>
+    <li><a href="#12-map-size-saving-and-exporting">Map size, saving and exporting</a></li>
+    <li><a href="#13-keyboard-shortcuts">Keyboard shortcuts</a></li>
+    <li><a href="#14-troubleshooting">Troubleshooting</a></li>
+    <li><a href="#15-licences-and-credits">Licences and credits</a></li>
+  </ol>
+</nav>
+<main id="doc">
+<h1 id="pocket-mapp-creator-user-guide">Pocket-Mapp-Creator User Guide</h1>
+<p>Version 0.2</p>
+<p>Pocket-Mapp-Creator is a desktop map maker for fantasy, sci-fi, modern and realistic maps: paint land, stamp on mountains, towns and ships, add labels, then export a PNG or JPG. This guide covers version 0.2.</p>
+<h2 id="1-installing-and-starting">1. Installing and starting</h2>
+<p>Download the installer for your computer from the project&#39;s GitHub <strong>Releases</strong> page, run it, then start Pocket-Mapp-Creator like any other program.</p>
+<table>
+<thead>
+<tr>
+<th>Computer</th>
+<th>File to download</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Windows</td>
+<td><code>Pocket-Mapp-Creator-…-win-x64.exe</code></td>
+<td>Installs the app and adds a Start menu shortcut</td>
+</tr>
+<tr>
+<td>Windows (no install)</td>
+<td><code>Pocket-Mapp-Creator-…-win-portable.exe</code></td>
+<td>Runs straight away, e.g. from a USB stick</td>
+</tr>
+<tr>
+<td>Mac with Apple chip (M1 or later)</td>
+<td><code>Pocket-Mapp-Creator-…-mac-arm64.dmg</code></td>
+<td>Open it and drag the app into Applications</td>
+</tr>
+<tr>
+<td>Mac with Intel chip</td>
+<td><code>Pocket-Mapp-Creator-…-mac-x64.dmg</code></td>
+<td>As above</td>
+</tr>
+<tr>
+<td>Linux</td>
+<td><code>Pocket-Mapp-Creator-…-linux-x86_64.AppImage</code></td>
+<td>Mark it as executable, then double-click it</td>
+</tr>
+<tr>
+<td>Debian / Ubuntu</td>
+<td><code>Pocket-Mapp-Creator-…-linux-amd64.deb</code></td>
+<td>Install with your software centre or <code>sudo apt install ./file.deb</code></td>
+</tr>
+</tbody></table>
+<p><strong>First-run warnings.</strong> The installers are not code-signed, so your computer may warn you the first time:</p>
+<ul>
+<li><strong>Windows:</strong> if SmartScreen says &quot;Windows protected your PC&quot;, click <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+<li><strong>Mac:</strong> right-click the app and choose <strong>Open</strong>, then <strong>Open</strong> again. If macOS says the app &quot;is damaged&quot;, run <code>xattr -cr &quot;/Applications/Pocket-Mapp-Creator.app&quot;</code> in Terminal, then try again.</li>
+</ul>
+<p><strong>The welcome window.</strong> Every time the app starts it shows the welcome window. Choose:</p>
+<ol>
+<li><strong>Map type</strong>: World / Region, Town / City / Village, or Battle Map.</li>
+<li><strong>Style</strong>: Parchment, Full colour or Watercolour. You can change this later at any time.</li>
+<li><strong>Size</strong>: pick a preset or type a width and height in pixels (200 to 8000).</li>
+<li><strong>Name</strong>: the map&#39;s title, used when you save and export.</li>
+</ol>
+<p>Click <strong>Create map</strong>, or <strong>Open existing…</strong> to carry on with a map you saved before. Every new map starts as open ocean, ready for you to paint the land.</p>
+<p><strong>Explore an example map</strong> opens a finished world map you can take apart to see how it was made. If the app closed before you saved, the welcome window also shows <strong>Recover unsaved map</strong>: the app saves a backup copy every minute while there are unsaved changes.</p>
+<h2 id="2-the-screen-at-a-glance">2. The screen at a glance</h2>
+<p>The map sits in the middle; tools are on the left, layers and settings on the right.</p>
+<p><img src="guide-images/main-window.png" alt="The Pocket-Mapp-Creator main window with its eight areas numbered"></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Area</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><strong>Top bar</strong></td>
+<td>New, Open, Save, Undo/Redo, map <strong>Style</strong>, <strong>Map size</strong>, Grid, <strong>Snap</strong> and Border switches, zoom controls, Export PNG and Export JPG</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Tool bar</strong></td>
+<td>Select, Stamp, Land, Ocean, Fill, Texture, Ground, Lines, Shapes, Text and Pan</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Asset library</strong></td>
+<td>Every built-in asset, filtered by genre (Fantasy, Sci-Fi, Modern, Realistic) and view (World, Town 3/4, Battle, Decor), plus a search box and your imported assets</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Map area</strong></td>
+<td>Where you paint and place things</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Layers</strong></td>
+<td>Water, Land, Assets and Text: show, hide, lock, and choose which one you are working on</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>Properties</strong></td>
+<td>Settings for whatever is selected, or for the map when nothing is</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>Assets used</strong></td>
+<td>Every kind of item on the map with a count, so you can select, hide or delete all copies at once</td>
+</tr>
+<tr>
+<td>8</td>
+<td><strong>Scroll bars</strong></td>
+<td>Move around the map when you are zoomed in</td>
+</tr>
+</tbody></table>
+<p>When a drawing tool is chosen, a small bar of options for it appears at the top of the map area.</p>
+<h2 id="3-your-first-map-in-10-steps">3. Your first map in 10 steps</h2>
+<p>Work from the bottom layer up: land first, then features, then labels.</p>
+<ol>
+<li>In the welcome window choose <strong>World / Region</strong>, <strong>Parchment</strong>, the first size preset, and click <strong>Create map</strong>.</li>
+<li>Choose <strong>Land</strong> in the tool bar. In the bar above the map, set <strong>Size</strong> to about 60.</li>
+<li>Draw the outline of your continent in one stroke. If you finish near where you started, the ends join up by themselves.</li>
+<li>Choose <strong>Fill</strong> (the paint bucket) and click inside the outline. It fills solid, and the coastline and sea ripples are inked for you.</li>
+<li>Use <strong>Ocean</strong> to carve bays and lakes, and <strong>Land</strong> to add islands.</li>
+<li>In the asset library pick <strong>Mountain</strong>. In the Stamp bar tick <strong>Scatter brush</strong> and drag across the land to paint a mountain range. Do the same with <strong>Pine Tree</strong> for forests.</li>
+<li>Untick Scatter brush and click to place single items: <strong>Castle</strong>, <strong>Village</strong>, <strong>Walled City</strong>. Put ships, rocks and a <strong>Compass Rose</strong> in the sea.</li>
+<li>Choose <strong>Lines</strong>, pick <strong>River</strong>, and drag from the mountains to the sea.</li>
+<li>Choose <strong>Text</strong>, pick a font and size in the bar, then click where each name should go. Add a <strong>Title Cartouche</strong> from the Decor assets and a title label on top of it.</li>
+<li>Click <strong>Save</strong> to keep a <code>.mapp</code> file you can reopen, then <strong>Export PNG</strong> for a picture to share or print.</li>
+</ol>
+<h2 id="4-map-types-and-styles">4. Map types and styles</h2>
+<p>The map type decides which assets the library shows first and whether a grid is on; the style decides how everything is drawn.</p>
+<table>
+<thead>
+<tr>
+<th>Map type</th>
+<th>Use it for</th>
+<th>Assets it opens with</th>
+<th>Default size</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>World / Region</td>
+<td>Continents, kingdoms, coastlines</td>
+<td>World: side-view mountains, forests, castles, cities</td>
+<td>3000 × 2000 px</td>
+</tr>
+<tr>
+<td>Town / City / Village</td>
+<td>Streets and settlements</td>
+<td>Town 3/4: houses, taverns, walls, docks seen at an angle</td>
+<td>2400 × 1800 px</td>
+</tr>
+<tr>
+<td>Battle Map</td>
+<td>RPG encounters, tavern and dungeon interiors</td>
+<td>Battle: top-down trees, rocks, furniture, dungeon traps, ships, with a square grid</td>
+<td>1400 × 1400 px (20 × 20 squares of 70 px)</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>Style</th>
+<th>Looks like</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Parchment</td>
+<td>Sepia ink on aged paper, hatched mountains, ripple lines round every coast</td>
+</tr>
+<tr>
+<td>Full colour</td>
+<td>Bold game-map colours, sandy beaches, shallow water</td>
+</tr>
+<tr>
+<td>Watercolour</td>
+<td>Soft washes with darker pigment at the edges</td>
+</tr>
+</tbody></table>
+<p>Change the style at any time from <strong>Style</strong> in the top bar; every asset and the coastline redraw in the new style. Change the map type from <strong>Type</strong> in Properties (press Esc so nothing is selected, and Properties shows the map&#39;s settings). Assets from any type can be used on any map: the filters only decide what is listed.</p>
+<h2 id="5-layers">5. Layers</h2>
+<p>Everything on a map sits on one of four layers, stacked like sheets of tracing paper: water at the bottom, text always on top.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Layer</th>
+<th>Holds</th>
+<th>Selected with the Select tool by</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>4</td>
+<td><strong>Text</strong></td>
+<td>Every label</td>
+<td>Clicking a label</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Assets</strong></td>
+<td>Mountains, trees, towns, ships, bridges, rooms and shapes, and all rivers, roads and borders</td>
+<td>Clicking an item, or dragging a box round several</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Land</strong></td>
+<td>Landmasses, texture paint and ground paint (roads, dirt, clearings)</td>
+<td>Clicking anywhere on land, even under mountains or towns</td>
+</tr>
+<tr>
+<td>1</td>
+<td><strong>Water</strong></td>
+<td>The sea; the base of the map</td>
+<td>Not selectable</td>
+</tr>
+</tbody></table>
+<p><strong>The active layer.</strong> The Select tool only picks things on the active layer, which is highlighted in the Layers panel. Click a layer&#39;s name to make it active, or press <strong>1</strong> for Land, <strong>2</strong> for Assets, <strong>3</strong> for Text. Drawing tools switch for you: Land, Ocean, Fill, Texture and Ground use Land; Stamp, Lines and Shapes use Assets; Text uses Text.</p>
+<p><strong>Eye button.</strong> Hides a layer. Hidden layers are also left out when you export, which is handy for a copy of the map without labels.</p>
+<p><strong>Padlock.</strong> Locks a layer so nothing on it can be selected, moved or painted by accident.</p>
+<p>If you click on land while the Assets or Text layer is active, a hint at the bottom of the map reminds you to switch to the Land layer.</p>
+<h2 id="6-working-with-land">6. Working with land</h2>
+<p>Land is painted, not placed: brush it on, fill outlines, then select whole landmasses to move or resize them. Coastlines and sea ripples are drawn automatically whenever you let go of the mouse.</p>
+<h3 id="land-and-ocean-brushes">Land and Ocean brushes</h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Land</strong></td>
+<td>B</td>
+<td>Paints land</td>
+</tr>
+<tr>
+<td><strong>Ocean</strong></td>
+<td>E</td>
+<td>Paints sea, rubbing land away: for bays, lakes, channels and islands</td>
+</tr>
+<tr>
+<td><strong>Ground</strong></td>
+<td>P</td>
+<td>Paints roads, dirt and clearings on top of land (Paint or Erase)</td>
+</tr>
+</tbody></table>
+<p>In the bar above the map, <strong>Size</strong> sets the brush width (or press <strong>[</strong> and <strong>]</strong>), and <strong>Rough edge</strong> gives a natural, ragged coast. Hold <strong>Alt</strong> while painting to swap between Land and Ocean. With the Land brush, <strong>Auto-close outlines</strong> joins the two ends of a stroke that finishes near where it started.</p>
+<h3 id="fill-bucket">Fill bucket</h3>
+<p>The quickest way to make a continent: draw its outline, then fill it.</p>
+<ol>
+<li>Draw the coastline with the <strong>Land</strong> brush.</li>
+<li>Choose <strong>Fill</strong> (the paint bucket, key <strong>G</strong>).</li>
+<li>Click inside the outline, on the water. It becomes solid land right up to the coast.</li>
+</ol>
+<p><img src="guide-images/fill-outline.png" alt="Left: a freehand coastline outline whose ends don&#39;t quite meet. Right: the same outline after one click with the Fill bucket, now a solid island"></p>
+<p><em>Left: a hand-drawn outline with a gap. Right: one click with the Fill bucket.</em></p>
+<ul>
+<li><strong>Close gaps</strong> (in the Fill bar) seals small breaks in an outline. The fill also tries wider gaps by itself before giving up.</li>
+<li>If the outline really is open, nothing is filled: a message explains why and the sea it would have flooded flashes red. Join the outline with the Land brush and try again.</li>
+<li><strong>Fill with water</strong> mode does the opposite: click a piece of land to turn all of it into sea.</li>
+</ul>
+<h3 id="selecting-moving-and-resizing-a-landmass">Selecting, moving and resizing a landmass</h3>
+<ol>
+<li>Make <strong>Land</strong> the active layer (click it in the Layers panel, or press <strong>1</strong>).</li>
+<li>Choose <strong>Select</strong> and click the land. Every piece of land joined to that spot gets an orange box with handles.</li>
+<li>Drag a <strong>corner square</strong> to make it bigger or smaller, drag <strong>inside the box</strong> to move it, or drag the <strong>round handle</strong> to rotate it (hold Shift to snap to 15°).</li>
+<li>Click <strong>Done</strong>, click the sea, or press <strong>Esc</strong> to finish. The coastline is redrawn at the new size.</li>
+</ol>
+<p>The Properties panel lets you type an exact <strong>Size %</strong> and <strong>Rotation</strong>, and has <strong>Smaller</strong>, <strong>Bigger</strong>, <strong>Reset</strong> and <strong>Delete land</strong> buttons. Everything standing on the land (mountains, towns, roads, labels) moves and scales with it unless you untick <strong>Move items on this land with it</strong>.</p>
+<p>Two islands that touch count as one landmass; separate them with the Ocean brush if you want to resize just one.</p>
+<h2 id="7-placing-and-editing-assets">7. Placing and editing assets</h2>
+<p>There are 157 built-in assets, each drawn in all three styles: mountains, forests, castles, towns, ships, docks, bridges, sea rocks, sci-fi bases, modern buildings and more.</p>
+<h3 id="finding-an-asset">Finding an asset</h3>
+<p>In the asset library, choose a genre (<strong>Fantasy</strong>, <strong>Sci-Fi</strong>, <strong>Modern</strong>, <strong>Realistic</strong> or <strong>All</strong>), then a view: <strong>World</strong> for side-view map icons, <strong>Town 3/4</strong> for buildings seen at an angle, <strong>Battle</strong> for top-down pieces, or <strong>Decor</strong> for compasses, banners, ships and sea monsters. Or type in <strong>Search assets</strong> (for example &quot;ship&quot;, &quot;bridge&quot; or &quot;rock&quot;).</p>
+<h3 id="placing-assets">Placing assets</h3>
+<p>Click a tile to pick it up (the <strong>Stamp</strong> tool turns on), then click the map. You can also drag a tile straight onto the map. The Stamp bar above the map has:</p>
+<ul>
+<li><strong>Scale</strong>: the size new items are placed at.</li>
+<li><strong>Scatter brush</strong>: drag to paint many copies, for forests and mountain ranges. <strong>Spacing</strong>, <strong>Size ±</strong>, <strong>Rotate ±</strong> and <strong>Random flip</strong> make the copies varied.</li>
+<li><strong>Depth sort</strong>: keeps lower items in front of higher ones, so ranges and forests overlap naturally.</li>
+</ul>
+<h3 id="editing-assets">Editing assets</h3>
+<p>With <strong>Assets</strong> as the active layer, choose <strong>Select</strong> and click an item. Shift-click or drag a box to select several.</p>
+<table>
+<thead>
+<tr>
+<th>To</th>
+<th>Do this</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Move</td>
+<td>Drag it, or nudge with the arrow keys (hold Shift for 10 px)</td>
+</tr>
+<tr>
+<td>Resize</td>
+<td>Drag a corner square, press <strong>[</strong> or <strong>]</strong>, or type a <strong>Scale</strong> in Properties</td>
+</tr>
+<tr>
+<td>Rotate</td>
+<td>Drag the round handle (Shift snaps to 15°), press <strong>R</strong>, or type a <strong>Rotation</strong></td>
+</tr>
+<tr>
+<td>Flip</td>
+<td>Press <strong>F</strong> or click <strong>Flip</strong></td>
+</tr>
+<tr>
+<td>Fade</td>
+<td>Drag <strong>Opacity</strong> in Properties</td>
+</tr>
+<tr>
+<td>Change stacking</td>
+<td><strong>Front</strong>, <strong>▲</strong>, <strong>▼</strong>, <strong>Back</strong> in Properties</td>
+</tr>
+<tr>
+<td>Duplicate</td>
+<td><strong>Ctrl+D</strong>, or hold <strong>Alt</strong> while dragging</td>
+</tr>
+<tr>
+<td>Delete</td>
+<td><strong>Delete</strong> key or the <strong>Delete</strong> button</td>
+</tr>
+</tbody></table>
+<h3 id="copy-and-paste">Copy and paste</h3>
+<p>Select one item or a group and press <strong>Ctrl+C</strong> (or <strong>Copy</strong>). Move the mouse to where the copy should go and press <strong>Ctrl+V</strong>. Copies keep their exact size, rotation, flip and opacity. <strong>Ctrl+X</strong> cuts. Copies stay on the clipboard when you open another map, so you can paste between maps.</p>
+<h3 id="assets-used-list">Assets used list</h3>
+<p>The <strong>Assets used</strong> panel lists every kind of item on the map with a count, most-used first. For each kind: <strong>Select</strong> selects every copy, <strong>Hide</strong> hides them all, and <strong>Delete</strong> removes them all (after asking). Click <strong>▸</strong> to list each copy; clicking one jumps the view to it. <strong>Select all like this</strong> in Properties does the same for the selected item&#39;s kind.</p>
+<h3 id="your-own-assets">Your own assets</h3>
+<p>Click <strong>+ Import</strong> under the library (or <strong>File → Import Custom Asset</strong>) to add your own PNG, SVG, JPG or WebP images. They are saved inside the map file, so the map keeps them when shared.</p>
+<h2 id="8-rivers-roads-and-borders">8. Rivers, roads and borders</h2>
+<p>Choose <strong>Lines</strong> (key <strong>L</strong>), pick a kind and a <strong>Width</strong> in the bar above the map, then drag across the map.</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Looks like</th>
+<th>Tip</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>River</td>
+<td>A water channel that widens as it goes</td>
+<td>Draw from the source to the sea: the end you finish at is the widest</td>
+</tr>
+<tr>
+<td>Road</td>
+<td>Dashed line</td>
+<td></td>
+</tr>
+<tr>
+<td>Trail</td>
+<td>Dotted line</td>
+<td>Footpaths and tracks</td>
+</tr>
+<tr>
+<td>Border</td>
+<td>Dash-dot line in red-brown</td>
+<td>Kingdom and county borders</td>
+</tr>
+<tr>
+<td>Wall</td>
+<td>Solid stone-coloured band</td>
+<td>City walls seen from above</td>
+</tr>
+<tr>
+<td>Ink line</td>
+<td>Plain line</td>
+<td>Anything else</td>
+</tr>
+</tbody></table>
+<p>Lines are on the <strong>Assets</strong> layer. Select one to change its <strong>Kind</strong>, <strong>Width</strong> or <strong>Opacity</strong> in Properties, move it, copy it or delete it. To change a line&#39;s path, delete it and draw it again. For wide roads or dirt areas painted freehand, use the <strong>Ground</strong> brush instead (section 6).</p>
+<h2 id="9-rooms-textures-and-effects">9. Rooms, textures and effects</h2>
+<p>These tools cover interiors, dungeons and city blocks, and give a finished look to the whole map.</p>
+<h3 id="shapes-rooms-buildings-and-floors">Shapes: rooms, buildings and floors</h3>
+<p>Choose <strong>Shapes</strong> (key <strong>U</strong>). In the bar above the map pick a shape, a <strong>Floor</strong> texture and a <strong>Wall</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Shape</th>
+<th>How to draw it</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Rectangle room</td>
+<td>Drag from corner to corner. Hold Shift for a square</td>
+</tr>
+<tr>
+<td>Round room</td>
+<td>Drag. Hold Shift for a circle</td>
+</tr>
+<tr>
+<td>Polygon area</td>
+<td>Click each corner. Click the first point, double-click or press Enter to close it. Backspace removes the last point; Esc cancels</td>
+</tr>
+</tbody></table>
+<p>Floors: stone, cobbles, wood, dirt, grass, sand, rock, snow, water, lava, or none (walls only). Walls: stone, wooden, ink outline or none, with a <strong>Wall width</strong>. Shapes always sit underneath other items on the Assets layer, so a room drawn after the furniture still goes under it. Select a shape to change its floor, wall or width in Properties. For a whole building, draw rooms side by side and add <strong>Stairs</strong>, <strong>Secret Door</strong>, <strong>Trapdoor</strong> and furniture from the Battle assets.</p>
+<h3 id="texture-brush">Texture brush</h3>
+<p>Choose <strong>Texture</strong> (key <strong>X</strong>) to paint a texture straight onto the ground: grass, dirt, sand, rock, snow, stone, cobbles, wood, water or lava. In the bar set the <strong>Size</strong>, <strong>Soft</strong> (edge softness) and <strong>Strength</strong>. <strong>Land only</strong> keeps paint off the sea, and <strong>Erase</strong> removes texture paint. Textures move and resize with their landmass, and the Ocean brush wipes them away.</p>
+<h3 id="snap-to-grid">Snap to grid</h3>
+<p>Tick <strong>Snap</strong> in the top bar (it needs a square grid). Rooms snap their corners to grid lines; assets snap to the middle of a square when you place or move them. Untick it for free placement.</p>
+<h3 id="effects-on-items">Effects on items</h3>
+<p>Select an asset, label or shape and open <strong>Effects</strong> in Properties:</p>
+<table>
+<thead>
+<tr>
+<th>Effect</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Drop shadow</td>
+<td>A soft shadow beneath the item</td>
+</tr>
+<tr>
+<td>Glow</td>
+<td>A halo in the colour you pick: magic, lamps, lava</td>
+</tr>
+<tr>
+<td>Hue · Brightness · Saturation</td>
+<td>Recolour the item (not labels)</td>
+</tr>
+<tr>
+<td>Tint</td>
+<td>Wash the item in any colour, with an amount slider (not labels)</td>
+</tr>
+<tr>
+<td>Reset effects</td>
+<td>Remove all effects</td>
+</tr>
+</tbody></table>
+<p>With several items selected, <strong>Add drop shadow</strong> and <strong>Remove effects</strong> apply to them all at once.</p>
+<h3 id="coastline-and-colours">Coastline and colours</h3>
+<p>With nothing selected, <strong>Coastline &amp; colours</strong> in Properties sets the number of sea <strong>Ripples</strong>, their <strong>Spacing</strong>, the <strong>Coast line</strong> thickness, and the <strong>Sea colour</strong> and <strong>Land colour</strong>. <strong>Default</strong> puts each one back to the style&#39;s own setting.</p>
+<h3 id="map-look-filters">Map look (filters)</h3>
+<p><strong>Map look</strong> in Properties changes the whole picture: <strong>Brightness</strong>, <strong>Contrast</strong>, <strong>Saturation</strong>, <strong>Hue</strong>, <strong>Sepia</strong> (for an aged look) and <strong>Vignette</strong> (darkened edges). These are included when you export.</p>
+<h2 id="10-text-labels">10. Text labels</h2>
+<p>Labels sit on the top layer, so nothing you add later can cover them. Add them last.</p>
+<ol>
+<li>Choose <strong>Text</strong> (key <strong>T</strong>).</li>
+<li>In the bar above the map pick a <strong>font</strong>, a <strong>Size</strong>, a <strong>colour</strong>, and <strong>B</strong> (bold) or <em><strong>I</strong></em> (italic) if wanted.</li>
+<li>Click where the label should go. A label saying &quot;New Label&quot; appears; type its wording in the box in the bar and press Enter.</li>
+<li>To move a label, drag it with the Text tool. To change it, click it: the bar now edits that label&#39;s wording, font, size and colour.</li>
+</ol>
+<p>More settings are in Properties when a label is selected (double-click a label to jump there):</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Text box</td>
+<td>The wording; press Enter in the Properties box for a second line</td>
+</tr>
+<tr>
+<td>CAPS</td>
+<td>Shows the label in capitals</td>
+</tr>
+<tr>
+<td>Halo</td>
+<td>A soft paper-coloured outline that keeps text readable over busy areas</td>
+</tr>
+<tr>
+<td>Spacing</td>
+<td>Gap between letters: wide spacing suits seas and regions</td>
+</tr>
+<tr>
+<td>Curve</td>
+<td>Bends the label into an arc (negative values bend the other way): for rivers, coasts and mountain ranges</td>
+</tr>
+<tr>
+<td>Scale, Rotation, Opacity</td>
+<td>As for assets</td>
+</tr>
+</tbody></table>
+<p>Fonts included: IM Fell English, IM Fell English SC, Uncial Antiqua, Cinzel, Macondo, EB Garamond and Caveat suit fantasy maps; Orbitron suits sci-fi; Georgia and Arial are plain choices.</p>
+<h2 id="11-moving-around-the-map">11. Moving around the map</h2>
+<table>
+<thead>
+<tr>
+<th>To</th>
+<th>Do this</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Zoom in or out</td>
+<td>Mouse wheel over the map, the <strong>+</strong> and <strong>−</strong> buttons in the top bar, or Ctrl+= / Ctrl+-</td>
+</tr>
+<tr>
+<td>Zoom to an exact level</td>
+<td>Type a number in the <strong>%</strong> box between − and + and press Enter, or pick one from <strong>Zoom…</strong> (25% to 400%)</td>
+</tr>
+<tr>
+<td>See the whole map</td>
+<td><strong>Fit</strong>, or Ctrl+0</td>
+</tr>
+<tr>
+<td>Scroll</td>
+<td>Drag the scroll bars along the bottom and right of the map, or click their track to jump a screen</td>
+</tr>
+<tr>
+<td>Scroll with the wheel</td>
+<td>Shift+wheel scrolls sideways, Alt+wheel scrolls up and down</td>
+</tr>
+<tr>
+<td>Pan freely</td>
+<td>Hold <strong>Space</strong> and drag, drag with the middle mouse button, or use the <strong>Pan</strong> tool (H)</td>
+</tr>
+</tbody></table>
+<p><strong>100%</strong> shows the map at the exact size it will export at. The numbers at the bottom left of the map show the mouse position in map pixels and, on battle maps, which grid square it is in.</p>
+<h2 id="12-map-size-saving-and-exporting">12. Map size, saving and exporting</h2>
+<h3 id="map-size-grid-and-border">Map size, grid and border</h3>
+<ul>
+<li><strong>Map size…</strong> in the top bar changes the canvas. <strong>Extend / crop the canvas</strong> adds or trims space around the map (new space starts as sea), with an <strong>Anchor</strong> choosing which edge stays put. <strong>Scale everything to fit</strong> stretches the whole map, assets and all, to the new size.</li>
+<li><strong>Grid</strong> in the top bar turns the grid on and off. With nothing selected, Properties lets you choose <strong>Square</strong> or <strong>Hex</strong>, the <strong>Cell size</strong> in pixels (70 by default) and the grid&#39;s colour and strength.</li>
+<li><strong>Border</strong> turns the decorative map frame on and off.</li>
+</ul>
+<h3 id="saving-and-opening">Saving and opening</h3>
+<p><strong>Save</strong> (Ctrl+S) stores everything in one <code>.mapp</code> file: land, texture paint, assets, rooms, lines, labels, effects, layer settings and any imported images. While there are unsaved changes the app also keeps a backup every minute; if it closes unexpectedly, choose <strong>Recover unsaved map</strong> in the welcome window. Closing with unsaved changes asks first. <strong>File → Save As…</strong> (Ctrl+Shift+S) saves a copy under a new name, and <strong>Open</strong> (Ctrl+O) reopens a map. Maps made with the earlier name, Mapp-Creator, open too.</p>
+<h3 id="exporting-a-picture">Exporting a picture</h3>
+<ol>
+<li>Click <strong>Export PNG</strong> (Ctrl+E) or <strong>Export JPG</strong> (Ctrl+Shift+E).</li>
+<li>Choose a <strong>Resolution</strong>: 0.5×, 1× (the map&#39;s own size), <strong>2K</strong>, <strong>4K</strong>, <strong>8K</strong> or 2×. 4K and 8K are for large prints; very large sizes are offered only when the result stays under about 70 million pixels.</li>
+<li>For JPG, set the <strong>Quality</strong>. Tick or untick <strong>Include grid</strong>.</li>
+<li>Click <strong>Export</strong> and choose where to save the file.</li>
+</ol>
+<p>PNG keeps every detail and is best for printing and further editing; JPG files are smaller and better for sharing online. Hidden layers are left out of the picture.</p>
+<h2 id="13-keyboard-shortcuts">13. Keyboard shortcuts</h2>
+<p>On a Mac use Cmd wherever Ctrl is shown. Shortcuts don&#39;t fire while you are typing in a text box, so Ctrl+C and Ctrl+V work normally there. Press <strong>F1</strong> or choose <strong>Help → User Guide</strong> to open this guide inside the app; <strong>Help → Keyboard Shortcuts</strong> shows a short list.</p>
+<table>
+<thead>
+<tr>
+<th>Keys</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>V · S · B · E · G · X · P · L · U · T · H</td>
+<td>Select · Stamp · Land · Ocean · Fill · Texture · Ground · Lines · Shapes · Text · Pan</td>
+</tr>
+<tr>
+<td>1 · 2 · 3</td>
+<td>Make Land · Assets · Text the active layer</td>
+</tr>
+<tr>
+<td>Ctrl+N · Ctrl+O · Ctrl+S</td>
+<td>New · Open · Save</td>
+</tr>
+<tr>
+<td>Ctrl+Shift+S</td>
+<td>Save As</td>
+</tr>
+<tr>
+<td>Ctrl+E · Ctrl+Shift+E</td>
+<td>Export PNG · Export JPG</td>
+</tr>
+<tr>
+<td>Ctrl+Z · Ctrl+Y (or Ctrl+Shift+Z)</td>
+<td>Undo · Redo</td>
+</tr>
+<tr>
+<td>Ctrl+C · Ctrl+X · Ctrl+V</td>
+<td>Copy · Cut · Paste (at the mouse, same size)</td>
+</tr>
+<tr>
+<td>Ctrl+D, or Alt+drag</td>
+<td>Duplicate</td>
+</tr>
+<tr>
+<td>Ctrl+A</td>
+<td>Select everything on the active layer</td>
+</tr>
+<tr>
+<td>Delete</td>
+<td>Delete the selection (or the selected landmass)</td>
+</tr>
+<tr>
+<td>Esc</td>
+<td>Clear the selection; finish a landmass edit; cancel a polygon</td>
+</tr>
+<tr>
+<td>Enter · Backspace</td>
+<td>Close a polygon · remove its last point</td>
+</tr>
+<tr>
+<td>Arrow keys (Shift for 10 px)</td>
+<td>Nudge the selection</td>
+</tr>
+<tr>
+<td>R · Shift+R</td>
+<td>Rotate 15° clockwise · anticlockwise</td>
+</tr>
+<tr>
+<td>F</td>
+<td>Flip the selected asset</td>
+</tr>
+<tr>
+<td>[ · ]</td>
+<td>Brush smaller · bigger, or selection smaller · bigger</td>
+</tr>
+<tr>
+<td>Alt while painting</td>
+<td>Swap the Land and Ocean brushes</td>
+</tr>
+<tr>
+<td>Shift while rotating</td>
+<td>Snap to 15°</td>
+</tr>
+<tr>
+<td>Mouse wheel · Ctrl+= · Ctrl+- · Ctrl+0</td>
+<td>Zoom · zoom in · zoom out · fit</td>
+</tr>
+<tr>
+<td>Shift+wheel · Alt+wheel</td>
+<td>Scroll sideways · up and down</td>
+</tr>
+<tr>
+<td>Space+drag, middle mouse drag</td>
+<td>Pan</td>
+</tr>
+<tr>
+<td>F1</td>
+<td>Open this user guide</td>
+</tr>
+</tbody></table>
+<h2 id="14-troubleshooting">14. Troubleshooting</h2>
+<p>Most surprises come from the active layer: check which layer is highlighted in the Layers panel first.</p>
+<table>
+<thead>
+<tr>
+<th>Problem</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Clicking land selects a mountain or nothing at all</td>
+<td>Make <strong>Land</strong> the active layer (press <strong>1</strong>), then click the land</td>
+</tr>
+<tr>
+<td>Clicking a mountain or town selects the land</td>
+<td>Make <strong>Assets</strong> the active layer (press <strong>2</strong>)</td>
+</tr>
+<tr>
+<td>&quot;This outline isn&#39;t closed&quot; when filling</td>
+<td>Join the outline with the Land brush, raise <strong>Close gaps</strong> in the Fill bar, or keep <strong>Auto-close outlines</strong> ticked on the Land brush</td>
+</tr>
+<tr>
+<td>&quot;That spot is already land&quot; when filling</td>
+<td>Click inside the outline, on the water, not on the outline itself</td>
+</tr>
+<tr>
+<td>&quot;The … layer is locked&quot; or &quot;… is hidden&quot;</td>
+<td>Click the padlock or the eye for that layer in the Layers panel</td>
+</tr>
+<tr>
+<td>Items or labels have vanished</td>
+<td>A layer&#39;s eye is off, or a group was hidden with <strong>Hide</strong> in Assets used: click <strong>Show</strong></td>
+</tr>
+<tr>
+<td>An exported picture has no labels</td>
+<td>The Text layer is hidden; show it and export again</td>
+</tr>
+<tr>
+<td>A pasted copy appears in the wrong place</td>
+<td>Copies paste where the mouse pointer is; with the pointer off the map they land just beside the original</td>
+</tr>
+<tr>
+<td>Items don&#39;t snap to the grid</td>
+<td>Tick <strong>Snap</strong> in the top bar and choose a <strong>Square</strong> grid</td>
+</tr>
+<tr>
+<td>The app closed before you saved</td>
+<td>Start it again and click <strong>Recover unsaved map</strong></td>
+</tr>
+<tr>
+<td>You made a mistake</td>
+<td>Undo (Ctrl+Z) goes back up to 60 steps</td>
+</tr>
+<tr>
+<td>Windows: &quot;Windows protected your PC&quot;</td>
+<td>Click <strong>More info</strong>, then <strong>Run anyway</strong></td>
+</tr>
+<tr>
+<td>Mac: &quot;the app is damaged&quot; or can&#39;t be opened</td>
+<td>Right-click the app and choose <strong>Open</strong>; if it still refuses, run <code>xattr -cr &quot;/Applications/Pocket-Mapp-Creator.app&quot;</code> in Terminal</td>
+</tr>
+</tbody></table>
+<h2 id="15-licences-and-credits">15. Licences and credits</h2>
+<p>Maps you make with the built-in assets and fonts are yours to use, including commercially, with no credit required.</p>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>Licence</th>
+<th>Credit</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Pocket-Mapp-Creator software</td>
+<td>MIT</td>
+<td>© 2026 project-tech-me · <a href="mailto:project-tech-me@protonmail.com">project-tech-me@protonmail.com</a></td>
+</tr>
+<tr>
+<td>157 built-in map assets (all three styles)</td>
+<td>CC0 1.0, public domain</td>
+<td>Original artwork made for Pocket-Mapp-Creator by project-tech-me</td>
+</tr>
+<tr>
+<td>Label fonts: IM Fell English, IM Fell English SC, Uncial Antiqua, Cinzel, Macondo, EB Garamond, Caveat, Orbitron</td>
+<td>SIL Open Font Licence 1.1</td>
+<td>Their designers, listed in the licence file</td>
+</tr>
+<tr>
+<td>Product icon</td>
+<td>All rights reserved</td>
+<td><strong>MJO-Art</strong> · <a href="mailto:workmjo@gmail.com">workmjo@gmail.com</a>. The icon files are custom images created by MJO-Art for this project and can not be altered or used without the express permission of the Artist</td>
+</tr>
+</tbody></table>
+<p>Images you import yourself keep their own licence: check it before publishing a map that uses them. Free sources include <a href="https://kenney.nl/assets" class="ext" rel="noopener">Kenney</a> (CC0) and <a href="https://game-icons.net" class="ext" rel="noopener">game-icons.net</a> (CC BY 3.0, credit required).</p>
+<p>The full licence texts ship with the app in <code>ASSET-LICENSES.md</code> and <code>LICENSE</code>, and are summarised under <strong>Help → Asset &amp; Font Licences</strong>.</p>
+
+</main>
+<script src="guide.js"></script>
+</body>
+</html>

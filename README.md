@@ -5,6 +5,8 @@ Make Tolkien-style parchment world maps, towns and villages, and top-down RPG ba
 
 ![Parchment world map](docs/parchment-world.png)
 
+**[Read the User Guide](docs/USER-GUIDE.md)**: everything from installing to exporting, with screenshots. The same guide is built into the app: press **F1**, click **? Guide**, or choose **Help → User Guide**.
+
 ## Features
 
 **Map styles** (switch at any time from the toolbar; the whole map re-skins)
@@ -17,7 +19,7 @@ Make Tolkien-style parchment world maps, towns and villages, and top-down RPG ba
 - **Town / City / Village** — 3/4-view houses, taverns, chapels, windmills, walls, gatehouses
 - **Battle maps** — top-down trees, rocks, furniture, campfires, with a square or hex grid (default 70 px cells)
 
-**Asset genres:** Fantasy, Sci-Fi, Modern, Realistic — 127 original assets × 3 styles.
+**Asset genres:** Fantasy, Sci-Fi, Modern, Realistic — 157 original assets × 3 styles.
 Includes ships (galleon, longship, merchant ship, rowing boat, cargo ship), docks, jetties and harbours, sea stacks and rocks for the ocean, and stone, wooden and suspension bridges, with top-down versions for battle maps.
 
 **Editing**
@@ -35,7 +37,15 @@ Includes ships (galleon, longship, merchant ship, rowing boat, cargo ship), dock
 - **Text labels**: pick a font, size and colour in the Text tool bar, then click where the label should go. Drag a label to move it and resize it from the same bar. 8 bundled map fonts, halo, letter-spacing, CAPS and **curved text**. Labels always sit on top of land, assets and lines
 - **Assets used** panel — every asset type on the map with its count; select all copies, hide them, or delete all copies in one click; expand to jump to individual copies
 - Import your own PNG/SVG assets (saved inside the map file)
-- Undo/redo, save/open `.mapp` files, export **PNG** or **JPG** at 0.5×–2× resolution
+- **Shapes tool** (U) for rooms, buildings and floors: rectangle, round and polygon rooms with textured floors (stone, cobbles, wood, dirt, grass, sand, rock, snow, water, lava) and stone, wooden or ink walls
+- **Texture brush** (X) paints grass, dirt, sand, rock, snow, stone and more straight onto the land, with soft edges
+- **Interior, dungeon and city assets**: fireplaces, bars, tables, bookshelves, stairs, trapdoors, secret doors, spike pits, prison bars, altars, sarcophagi, treasure, rubble, cobwebs, top-down houses and city blocks, and Asian-style pagodas, shrine gates, lanterns and houses
+- **Effects** on any item: drop shadow, coloured glow, hue, brightness, saturation and tint
+- **Coastline & colours**: number and spacing of sea ripples, coast line thickness, sea and land colours
+- **Map look** filters for the whole map: brightness, contrast, saturation, hue, sepia and vignette
+- **Snap to grid** for rooms and assets
+- **Autosave** every minute with recovery from the welcome window, plus an **example map** to explore
+- Undo/redo, save/open `.mapp` files, export **PNG** or **JPG** at 0.5×, 1×, 2K, 4K, 8K or 2×
 
 ## Running it
 
@@ -81,6 +91,10 @@ npm run dist:linux   # on Linux
 
 Output goes to `dist/`.
 
+## Updating the User Guide
+
+The guide lives in `docs/USER-GUIDE.md`, with its pictures in `docs/guide-images/`. After editing it, run `npm run guide` to rebuild the in-app copy (`src/guide/`). The installer builds do this automatically.
+
 ## Regenerating the asset library
 
 All built-in assets are drawn by code in `tools/generate-assets.js`. Edit a palette or a drawing function, then:
@@ -93,6 +107,7 @@ npm run assets
 
 | Key | Action |
 |---|---|
+| F1 | Open the User Guide |
 | V S B E G P L T H | Select · Stamp · Land brush · Ocean brush · Fill bucket · Ground · Lines · Text · Pan |
 | Space + drag / middle mouse | Pan |
 | Wheel, Ctrl+= / Ctrl+- / Ctrl+0 | Zoom / zoom in / zoom out / fit |
