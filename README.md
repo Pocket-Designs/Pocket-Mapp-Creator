@@ -13,13 +13,15 @@ Make Tolkien-style parchment world maps, towns and villages, and top-down RPG ba
 - **Parchment** — sepia ink on aged paper, hatched mountains, Tolkien-style ripple lines around every coast
 - **Full colour** — saturated, game-ready, beaches and shallow water
 - **Watercolour** — soft washes with bleeding edges and pigment rims
+- **Copperplate** — an engraved atlas: fine dark ink on ivory, closely hatched seas
+- **Night & Gold** — cream ink and gold on midnight-blue paper
 
 **Map types**
 - **World / Region** — paint continents and seas; side-view mountains, forests, castles, cities
 - **Town / City / Village** — 3/4-view houses, taverns, chapels, windmills, walls, gatehouses
 - **Battle maps** — top-down trees, rocks, furniture, campfires, with a square or hex grid (default 70 px cells)
 
-**Asset genres:** Fantasy, Sci-Fi, Modern, Realistic — 157 original assets × 3 styles.
+**Asset genres:** Fantasy, Sci-Fi, Modern, Realistic — 157 original assets × 5 styles.
 Includes ships (galleon, longship, merchant ship, rowing boat, cargo ship), docks, jetties and harbours, sea stacks and rocks for the ocean, and stone, wooden and suspension bridges, with top-down versions for battle maps.
 
 **Editing**
@@ -44,8 +46,17 @@ Includes ships (galleon, longship, merchant ship, rowing boat, cargo ship), dock
 - **Coastline & colours**: number and spacing of sea ripples, coast line thickness, sea and land colours
 - **Map look** filters for the whole map: brightness, contrast, saturation, hue, sepia and vignette
 - **Snap to grid** for rooms and assets
+- **Random maps** (🎲): worlds with mountains, forests, rivers, named towns, roads and realms; towns with streets, a market square, river, bridges and walls; dungeons with rooms, corridors, doors, furniture, traps and room numbers. The same seed always gives the same map
+- **Dungeon tool** (D): carve rooms and corridors square by square; walls are drawn automatically
+- **Realms**: coloured areas with dashed borders that only colour the land, plus a **map key** that lists them and an index of places by grid square
+- **Auto-routed roads** that find their own way round seas, lakes and mountains
+- **Lighting**: darken the map and let torches, fires, lanterns and lighthouses glow
+- **Layer effects**: opacity, drop shadow and glow for a whole layer
+- **Linked maps**: double-click a town or castle to open its own map, with a Back button
+- **Measure tool** (M) with a scale you set (miles, km, feet, squares)
+- **Marsh and jungle** textures
 - **Autosave** every minute with recovery from the welcome window, plus an **example map** to explore
-- Undo/redo, save/open `.mapp` files, export **PNG** or **JPG** at 0.5×, 1×, 2K, 4K, 8K or 2×
+- Undo/redo, save/open `.mapp` files, export **PNG** or **JPG** at 0.5×, 1×, 2K, 4K, 8K or 2×, **SVG** (vector icons and labels, fonts built in), print-ready **PDF** (A4 to A1, Letter, Tabloid or poster) and **Print**
 
 ## Running it
 
@@ -130,4 +141,4 @@ npm run assets
 - Built-in assets: original work, CC0 1.0 — see `ASSET-LICENSES.md` (full per-asset list)
 - Fonts: SIL Open Font License 1.1 — see `ASSET-LICENSES.md` and `src/fonts/licenses/`
 
-© 2026 project-tech-me · project-tech-me@protonmail.com
+© 2026 Pocket-Designs · pocket-designs@proton.me

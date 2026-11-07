@@ -1,5 +1,5 @@
 // Pocket-Mapp-Creator — terrain renderer (land/sea coastlines, ripple lines, paper texture)
-// Copyright (c) 2026 project-tech-me — MIT Licence
+// Copyright (c) 2026 Pocket-Designs — MIT Licence
 (function () {
   const MT = (window.MT = window.MT || {});
 
@@ -92,6 +92,16 @@
       ground: hex('#8fb562'), groundAlt: hex('#76a050'), path: hex('#c8ad7c'), beachCol: hex('#e7d39a'),
       coastW: 1.8, rings: 2, ringGap: 9, ringW: 1.0, ringFade: 0.25, grain: 0.035, stain: 0.05, vignette: 0.12, beach: 5, foam: 1
     },
+    copperplate: {
+      ink: hex('#1c2633'), sea: hex('#e4e4d8'), seaFar: hex('#ebeadf'), land: hex('#f4eedc'), landAlt: hex('#ece4cc'),
+      ground: hex('#f1ebd7'), groundAlt: hex('#e6dec5'), path: hex('#ddd3b8'),
+      coastW: 1.9, rings: 7, ringGap: 4.5, ringW: 0.8, ringFade: 0.75, grain: 0.035, stain: 0.04, vignette: 0.14, beach: 0, foam: 0
+    },
+    night: {
+      ink: hex('#ecdfb8'), sea: hex('#17223b'), seaFar: hex('#111a30'), land: hex('#27385c'), landAlt: hex('#2e416a'),
+      ground: hex('#28395e'), groundAlt: hex('#31456f'), path: hex('#3f5282'),
+      coastW: 2.2, rings: 3, ringGap: 8, ringW: 0.9, ringFade: 0.55, grain: 0.05, stain: 0.08, vignette: 0.22, beach: 0, foam: 0
+    },
     watercolour: {
       ink: hex('#5a4634'), sea: hex('#b9d9ea'), seaFar: hex('#d6e8ef'), shallow: hex('#8fc2dd'), land: hex('#e9e3c4'), landAlt: hex('#cfe0b0'),
       ground: hex('#d6e3b5'), groundAlt: hex('#bdd59a'), path: hex('#e0c99c'),
@@ -100,7 +110,7 @@
   };
   MT.LOOK = LOOK;
   MT.distance = distance; // exact-ish (5x5 chamfer) distance to the nearest 'feature' pixel
-  const PAPER_RGB = { parchment: hex('#f1e3bf'), colour: hex('#f6efdc'), watercolour: hex('#f7efdc') };
+  const PAPER_RGB = { parchment: hex('#f1e3bf'), colour: hex('#f6efdc'), watercolour: hex('#f7efdc'), copperplate: hex('#f3eddb'), night: hex('#1e2b45') };
 
   const noiseCache = new Map();
   function noiseFor(w, h, seed) {
@@ -187,7 +197,7 @@
         } else if (o.hideWater) {
           // Water layer hidden: plain paper, coastline still inked
           const d = dOut ? (dOut[i] - 0.5) / s + wob : 1e9;
-          r = PAPER_RGB[o.style][0]; g = PAPER_RGB[o.style][1]; b = PAPER_RGB[o.style][2];
+          const P = PAPER_RGB[o.style] || PAPER_RGB.parchment; r = P[0]; g = P[1]; b = P[2];
           if (d < coastHalf + 0.6) inkA = Math.max(inkA, 1 - sm(coastHalf - 0.6, coastHalf + 0.6, d));
         } else {
           const d = dOut ? (dOut[i] - 0.5) / s + wob : 1e9;
@@ -223,13 +233,13 @@
   };
 
   // Random continent / island generator for world maps
-  MT.generateLand = function (maskCanvas, seed, coverage = 0.42) {
-    const w = maskCanvas.width, h = maskCanvas.height;
-    const n = MT.valueNoise(w, h, Math.max(w, h) / 3.2, seed, 6);
+  MT.generateLand = function (maskCanvas, seed, coverage = 0.42, shape = {}) {
+    const w = maskCanvas.width, h = maskCanvas.height, fall = shape.fall ?? 0.55;
+    const n = MT.valueNoise(w, h, Math.max(w, h) / (shape.scale || 3.2), seed, 6);
     const vals = new Float32Array(w * h);
     for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i++) {
       const dx = (x / w - 0.5) * 2, dy = (y / h - 0.5) * 2;
-      vals[i] = n[i] - Math.pow(Math.max(Math.abs(dx), Math.abs(dy)) * 0.75 + Math.sqrt(dx * dx + dy * dy) * 0.25, 3) * 0.55;
+      vals[i] = n[i] - Math.pow(Math.max(Math.abs(dx), Math.abs(dy)) * 0.75 + Math.sqrt(dx * dx + dy * dy) * 0.25, 3) * fall;
     }
     const sorted = Float32Array.from(vals).sort();
     const thr = sorted[Math.floor(sorted.length * (1 - coverage))];

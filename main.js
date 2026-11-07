@@ -1,5 +1,5 @@
 // Pocket-Mapp-Creator — main process
-// Copyright (c) 2026 project-tech-me <project-tech-me@protonmail.com> — MIT Licence
+// Copyright (c) 2026 Pocket-Designs <pocket-designs@proton.me> — MIT Licence
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -56,6 +56,11 @@ function buildMenu() {
         { type: 'separator' },
         { label: 'Export PNG…', accelerator: 'CmdOrCtrl+E', click: () => send('exportPng') },
         { label: 'Export JPG…', accelerator: 'CmdOrCtrl+Shift+E', click: () => send('exportJpg') },
+        { label: 'Export SVG…', click: () => send('exportSvg') },
+        { label: 'Export PDF…', click: () => send('exportPdf') },
+        { label: 'Print…', accelerator: 'CmdOrCtrl+P', click: () => send('print') },
+        { type: 'separator' },
+        { label: 'Generate Random Map…', click: () => send('generate') },
         { type: 'separator' },
         { label: 'Import Custom Asset…', click: () => send('importAsset') },
         { type: 'separator' },
@@ -170,6 +175,81 @@ ipcMain.handle('export-image', async (_e, { dataUrl, ext }) => {
   const buf = typeof dataUrl === 'string' ? Buffer.from(dataUrl.split(',')[1], 'base64') : Buffer.from(dataUrl);
   fs.writeFileSync(r.filePath, buf);
   return r.filePath;
+});
+
+// ---------- linked maps: a stamp on one map can open another map file
+ipcMain.handle('pick-map', async (_e, { base }) => {
+  const r = await dialog.showOpenDialog(win, { title: 'Choose the map to link to', properties: ['openFile'], filters: [{ name: 'Pocket-Mapp-Creator Map', extensions: ['mapp'] }] });
+  if (r.canceled || !r.filePaths.length) return null;
+  const p = r.filePaths[0];
+  return { path: p, rel: base ? path.relative(path.dirname(base), p) : null, name: path.basename(p, path.extname(p)) };
+});
+ipcMain.handle('read-map', async (_e, { link, base }) => {
+  const tries = [];
+  if (base && link.rel) tries.push(path.resolve(path.dirname(base), link.rel));   // works when both maps move together
+  if (link.path) tries.push(link.path);
+  for (const p of tries) {
+    if (p.toLowerCase().endsWith('.mapp') && fs.existsSync(p)) return { filePath: p, data: fs.readFileSync(p, 'utf8') };
+  }
+  return null;
+});
+
+// ---------- SVG export helpers: the original vector asset files and the label fonts
+ipcMain.handle('read-assets', (_e, { style, keys }) => {
+  const out = {};
+  if (!/^[a-z]+$/.test(style)) return out;
+  for (const k of keys || []) {
+    if (!/^[a-z0-9-]+$/.test(k)) continue;
+    const p = path.join(__dirname, 'assets', style, `${k}.svg`);
+    if (fs.existsSync(p)) out[k] = fs.readFileSync(p, 'utf8');
+  }
+  return out;
+});
+ipcMain.handle('read-font', (_e, file) => {
+  if (!/^[a-z0-9-]+\.woff2$/.test(file)) return null;
+  const p = path.join(__dirname, 'src', 'fonts', file);
+  return fs.existsSync(p) ? fs.readFileSync(p).toString('base64') : null;
+});
+
+// ---------- PDF export and printing: the rendered map is laid out on a page in a hidden window
+async function pageWindow(bytes, page) {
+  const tmp = path.join(app.getPath('temp'), `pocket-mapp-print-${process.pid}-${Date.now()}.png`);
+  fs.writeFileSync(tmp, Buffer.from(bytes));
+  const m = page.margin || 0;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+    @page { size: ${page.w}in ${page.h}in; margin: 0 }
+    html, body { margin: 0; padding: 0; width: ${page.w}in; height: ${page.h}in; overflow: hidden; background: #fff }
+    .box { position: absolute; left: ${m}in; top: ${m}in; width: ${page.w - 2 * m}in; height: ${page.h - 2 * m}in; display: flex; align-items: center; justify-content: center }
+    img { max-width: 100%; max-height: 100%; object-fit: contain }
+  </style></head><body><div class="box"><img src="${require('url').pathToFileURL(tmp).href}"></div></body></html>`;
+  const htmlPath = tmp.replace(/\.png$/, '.html');
+  fs.writeFileSync(htmlPath, html, 'utf8');
+  const pw = new BrowserWindow({ show: false, width: 900, height: 900, webPreferences: { sandbox: true, contextIsolation: true } });
+  await pw.loadFile(htmlPath);
+  await pw.webContents.executeJavaScript('new Promise((r) => { const i = document.querySelector("img"); if (i.complete) r(); else i.onload = i.onerror = r; })');
+  const cleanup = () => { try { pw.destroy(); } catch (_) {} for (const f of [tmp, htmlPath]) { try { fs.rmSync(f, { force: true }); } catch (_) {} } };
+  return { pw, cleanup };
+}
+ipcMain.handle('export-pdf', async (_e, { bytes, page, name }) => {
+  const { pw, cleanup } = await pageWindow(bytes, page);
+  try {
+    const pdf = await pw.webContents.printToPDF({ pageSize: { width: page.w, height: page.h }, printBackground: true, margins: { top: 0, bottom: 0, left: 0, right: 0 }, preferCSSPageSize: true });
+    let target;
+    if (process.env.MAPP_TEST) target = path.join(process.env.MAPP_TEST, 'export-test.pdf');
+    else {
+      const r = await dialog.showSaveDialog(win, { title: 'Export PDF', defaultPath: `${(name || 'my-map').replace(/[\\/:*?"<>|]/g, '')}.pdf`, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+      if (r.canceled || !r.filePath) return null;
+      target = r.filePath;
+    }
+    fs.writeFileSync(target, pdf);
+    return target;
+  } finally { cleanup(); }
+});
+ipcMain.handle('print-map', async (_e, { bytes, page }) => {
+  const { pw, cleanup } = await pageWindow(bytes, page);
+  return new Promise((resolve) => {
+    pw.webContents.print({ printBackground: true, pageSize: { width: Math.round(page.w * 25400), height: Math.round(page.h * 25400) }, margins: { marginType: 'none' } }, (ok, reason) => { cleanup(); resolve(ok ? 'printed' : (reason || 'cancelled')); });
+  });
 });
 
 // ---------- autosave: a copy of the open map, written every minute while there are unsaved changes

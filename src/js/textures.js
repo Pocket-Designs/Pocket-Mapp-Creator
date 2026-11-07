@@ -1,5 +1,5 @@
 // Pocket-Mapp-Creator — procedural surface textures (shape floors and the texture brush)
-// Copyright (c) 2026 project-tech-me — MIT Licence
+// Copyright (c) 2026 Pocket-Designs — MIT Licence
 // Every texture is drawn here in code: original work, CC0, like the built-in assets.
 (function () {
   const MT = (window.MT = window.MT || {});
@@ -15,18 +15,32 @@
     rock:    { label: 'Rock',         parchment: ['#cfb889', '#9f8357', '#e0cda6'], colour: ['#8f877b', '#5c564d', '#ada69b'], watercolour: ['#aaa296', '#7c756a', '#c8c1b6'] },
     snow:    { label: 'Snow',         parchment: ['#f6eed8', '#d9caa6', '#fffaf0'], colour: ['#f2f6fa', '#c3d0dc', '#ffffff'], watercolour: ['#f3f6f8', '#cfdbe4', '#ffffff'] },
     water:   { label: 'Water',        parchment: ['#d6c091', '#b09564', '#e4d3ac'], colour: ['#4f97c8', '#2f6f99', '#86c1e2'], watercolour: ['#8fc2df', '#5f9cc0', '#bcdcee'] },
+    marsh:   { label: 'Marsh',        parchment: ['#d9c895', '#a8955f', '#e6d9b0'], colour: ['#7c9a5a', '#4d6a3a', '#6f9fb0'], watercolour: ['#a9c08e', '#7d9a6a', '#a7cbd6'] },
+    jungle:  { label: 'Jungle',       parchment: ['#d2bd86', '#a38a55', '#e2d2a6'], colour: ['#3f8a3a', '#245c26', '#68b04f'], watercolour: ['#7fb36a', '#4f8a4a', '#a6d08e'] },
     lava:    { label: 'Lava',         parchment: ['#c99a62', '#8e4a2c', '#e2bb7a'], colour: ['#e2561c', '#8a1f0c', '#ffb43a'], watercolour: ['#e88a5a', '#b24a2e', '#f8c487'] }
   };
   MT.TEXTURES = Object.fromEntries(Object.entries(TEX).map(([k, v]) => [k, v.label]));
 
   function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   const cache = new Map();
+  const INKS = { parchment: '#3b2817', colour: '#2d2216', watercolour: '#5a4634', copperplate: '#1c2633', night: '#ecdfb8' };
+  // colours for styles without their own set: worked out from the parchment colours
+  function derive(cols, style) {
+    return cols.map((h) => {
+      const r = parseInt(h.slice(1, 3), 16), g = parseInt(h.slice(3, 5), 16), b = parseInt(h.slice(5, 7), 16);
+      const L = (r * 0.3 + g * 0.59 + b * 0.11) / 255;
+      let out;
+      if (style === 'night') { const k = 0.35 + L * 0.55; out = [30 * k + 18, 43 * k + 24, 69 * k + 40].map((v) => v * (0.75 + L * 0.5)); }
+      else { const grey = L * 255; out = [r, g, b].map((v, i) => v * 0.35 + grey * 0.65 + [4, 2, -4][i]); }   // copperplate: pale, nearly colourless
+      return '#' + out.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+    });
+  }
 
   // Returns a square, seamlessly repeating canvas tile for a texture in a style.
   MT.textureTile = function (type, style) {
     const key = `${type}/${style}`; if (cache.has(key)) return cache.get(key);
-    const T = TEX[type] || TEX.stone; const [base, dark, light] = T[style] || T.parchment;
-    const ink = style === 'parchment' ? '#3b2817' : style === 'colour' ? '#2d2216' : '#5a4634';
+    const T = TEX[type] || TEX.stone; const [base, dark, light] = T[style] || derive(T.parchment, style);
+    const ink = INKS[style] || INKS.parchment;
     const N = 128, c = document.createElement('canvas'); c.width = c.height = N;
     const x = c.getContext('2d'); const r = rng(type.length * 977 + style.length * 31);
     x.fillStyle = base; x.fillRect(0, 0, N, N);
@@ -79,6 +93,19 @@
       case 'water': {
         speck(300, light, 1.4, 0.4);
         for (let i = 0; i < 9; i++) { const px = r() * N, py = r() * N; wrapLine([[px, py], [px + 5, py - 3], [px + 10, py], [px + 15, py - 3], [px + 20, py]], 0.9, style === 'parchment' ? ink : light, style === 'parchment' ? 0.45 : 0.8); }
+        break;
+      }
+      case 'marsh': {
+        speck(400, dark, 1.4, 0.3);
+        for (let i = 0; i < 7; i++) { const px = r() * N, py = r() * N; x.globalAlpha = 0.45; x.fillStyle = light; x.beginPath(); x.ellipse(px, py, 7 + r() * 8, 2.5 + r() * 2, 0, 0, 6.283); x.fill(); x.globalAlpha = 1; wrapLine([[px - 6, py], [px + 6, py]], 0.6, ink, 0.3); }
+        for (let i = 0; i < 26; i++) { const px = r() * N, py = r() * N; for (let k = -1; k <= 1; k++) wrapLine([[px, py], [px + k * 2.2, py - 5 - r() * 3]], 0.8, ink, 0.45); }
+        break;
+      }
+      case 'jungle': {
+        speck(300, light, 1.6, 0.35);
+        for (let i = 0; i < 34; i++) { const px = r() * N, py = r() * N, s = 5 + r() * 5; x.globalAlpha = 0.85; x.fillStyle = r() < 0.5 ? dark : light;
+          for (const ox of [0, -N, N]) for (const oy of [0, -N, N]) { x.beginPath(); for (let k = 0; k < 5; k++) { const a = (k / 5) * 6.283 + r(); x.ellipse(px + ox + Math.cos(a) * s * 0.5, py + oy + Math.sin(a) * s * 0.5, s * 0.55, s * 0.3, a, 0, 6.283); } x.fill(); }
+          x.globalAlpha = 1; wrapLine([[px - s * 0.4, py], [px + s * 0.4, py - s * 0.2]], 0.7, ink, 0.4); }
         break;
       }
       case 'lava': {

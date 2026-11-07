@@ -1,8 +1,8 @@
 # Pocket-Mapp-Creator User Guide
 
-Version 0.2
+Version 0.3
 
-Pocket-Mapp-Creator is a desktop map maker for fantasy, sci-fi, modern and realistic maps: paint land, stamp on mountains, towns and ships, add labels, then export a PNG or JPG. This guide covers version 0.2.
+Pocket-Mapp-Creator is a desktop map maker for fantasy, sci-fi, modern and realistic maps: paint land, stamp on mountains, towns and ships, add labels, then export a PNG or JPG. This guide covers version 0.3.
 
 ## Contents
 
@@ -15,12 +15,13 @@ Pocket-Mapp-Creator is a desktop map maker for fantasy, sci-fi, modern and reali
 7. [Placing and editing assets](#7-placing-and-editing-assets)
 8. [Rivers, roads and borders](#8-rivers-roads-and-borders)
 9. [Rooms, textures and effects](#9-rooms-textures-and-effects)
-10. [Text labels](#10-text-labels)
-11. [Moving around the map](#11-moving-around-the-map)
-12. [Map size, saving and exporting](#12-map-size-saving-and-exporting)
-13. [Keyboard shortcuts](#13-keyboard-shortcuts)
-14. [Troubleshooting](#14-troubleshooting)
-15. [Licences and credits](#15-licences-and-credits)
+10. [Random maps, realms and linked maps](#10-random-maps-realms-and-linked-maps)
+11. [Text labels](#11-text-labels)
+12. [Moving around the map](#12-moving-around-the-map)
+13. [Map size, saving and exporting](#13-map-size-saving-and-exporting)
+14. [Keyboard shortcuts](#14-keyboard-shortcuts)
+15. [Troubleshooting](#15-troubleshooting)
+16. [Licences and credits](#16-licences-and-credits)
 
 ## 1. Installing and starting
 
@@ -43,13 +44,13 @@ Download the installer for your computer from the project's GitHub **Releases** 
 **The welcome window.** Every time the app starts it shows the welcome window. Choose:
 
 1. **Map type**: World / Region, Town / City / Village, or Battle Map.
-2. **Style**: Parchment, Full colour or Watercolour. You can change this later at any time.
+2. **Style**: Parchment, Full colour, Watercolour, Copperplate or Night & Gold. You can change this later at any time.
 3. **Size**: pick a preset or type a width and height in pixels (200 to 8000).
 4. **Name**: the map's title, used when you save and export.
 
 Click **Create map**, or **Open existing…** to carry on with a map you saved before. Every new map starts as open ocean, ready for you to paint the land.
 
-**Explore an example map** opens a finished world map you can take apart to see how it was made. If the app closed before you saved, the welcome window also shows **Recover unsaved map**: the app saves a backup copy every minute while there are unsaved changes.
+**🎲 Random map…** creates the map and then rolls a random world, town or dungeon on it (section 10). **Explore an example map** opens a finished world map you can take apart to see how it was made. If the app closed before you saved, the welcome window also shows **Recover unsaved map**: the app saves a backup copy every minute while there are unsaved changes.
 
 ## 2. The screen at a glance
 
@@ -59,8 +60,8 @@ The map sits in the middle; tools are on the left, layers and settings on the ri
 
 | # | Area | What it does |
 | --- | --- | --- |
-| 1 | **Top bar** | New, Open, Save, Undo/Redo, map **Style**, **Map size**, Grid, **Snap** and Border switches, zoom controls, Export PNG and Export JPG |
-| 2 | **Tool bar** | Select, Stamp, Land, Ocean, Fill, Texture, Ground, Lines, Shapes, Text and Pan |
+| 1 | **Top bar** | New, Open, Save, Undo/Redo, map **Style**, **Map size**, Grid, **Snap** and Border switches, zoom controls, Export PNG, Export JPG and **More…** (SVG, PDF, Print). After you open a linked map, a blue **◀ Back** button appears here |
+| 2 | **Tool bar** | Select, Stamp, Land, Ocean, Fill, Texture, Ground, Lines, Shapes, Dungeon, Text, Measure and Pan |
 | 3 | **Asset library** | Every built-in asset, filtered by genre (Fantasy, Sci-Fi, Modern, Realistic) and view (World, Town 3/4, Battle, Decor), plus a search box and your imported assets |
 | 4 | **Map area** | Where you paint and place things |
 | 5 | **Layers** | Water, Land, Assets and Text: show, hide, lock, and choose which one you are working on |
@@ -100,6 +101,8 @@ The map type decides which assets the library shows first and whether a grid is 
 | Parchment | Sepia ink on aged paper, hatched mountains, ripple lines round every coast |
 | Full colour | Bold game-map colours, sandy beaches, shallow water |
 | Watercolour | Soft washes with darker pigment at the edges |
+| Copperplate | An engraved atlas: fine dark ink on ivory, closely hatched seas |
+| Night & Gold | Cream ink and gold on midnight-blue paper |
 
 Change the style at any time from **Style** in the top bar; every asset and the coastline redraw in the new style. Change the map type from **Type** in Properties (press Esc so nothing is selected, and Properties shows the map's settings). Assets from any type can be used on any map: the filters only decide what is listed.
 
@@ -109,12 +112,12 @@ Everything on a map sits on one of four layers, stacked like sheets of tracing p
 
 | # | Layer | Holds | Selected with the Select tool by |
 | --- | --- | --- | --- |
-| 4 | **Text** | Every label | Clicking a label |
-| 3 | **Assets** | Mountains, trees, towns, ships, bridges, rooms and shapes, and all rivers, roads and borders | Clicking an item, or dragging a box round several |
+| 4 | **Text** | Every label and the map key | Clicking a label |
+| 3 | **Assets** | Mountains, trees, towns, ships, bridges, rooms, the dungeon floor plan, realms, and all rivers, roads and borders | Clicking an item, or dragging a box round several |
 | 2 | **Land** | Landmasses, texture paint and ground paint (roads, dirt, clearings) | Clicking anywhere on land, even under mountains or towns |
 | 1 | **Water** | The sea; the base of the map | Not selectable |
 
-**The active layer.** The Select tool only picks things on the active layer, which is highlighted in the Layers panel. Click a layer's name to make it active, or press **1** for Land, **2** for Assets, **3** for Text. Drawing tools switch for you: Land, Ocean, Fill, Texture and Ground use Land; Stamp, Lines and Shapes use Assets; Text uses Text.
+**The active layer.** The Select tool only picks things on the active layer, which is highlighted in the Layers panel. Click a layer's name to make it active, or press **1** for Land, **2** for Assets, **3** for Text. Drawing tools switch for you: Land, Ocean, Fill, Texture and Ground use Land; Stamp, Lines, Shapes and Dungeon use Assets; Text uses Text.
 
 **Eye button.** Hides a layer. Hidden layers are also left out when you export, which is handy for a copy of the map without labels.
 
@@ -165,7 +168,7 @@ Two islands that touch count as one landmass; separate them with the Ocean brush
 
 ## 7. Placing and editing assets
 
-There are 157 built-in assets, each drawn in all three styles: mountains, forests, castles, towns, ships, docks, bridges, sea rocks, sci-fi bases, modern buildings and more.
+There are 157 built-in assets, each drawn in all five styles: mountains, forests, castles, towns, ships, docks, bridges, sea rocks, sci-fi bases, modern buildings and more.
 
 ### Finding an asset
 
@@ -218,6 +221,9 @@ Choose **Lines** (key **L**), pick a kind and a **Width** in the bar above the m
 | Border | Dash-dot line in red-brown | Kingdom and county borders |
 | Wall | Solid stone-coloured band | City walls seen from above |
 | Ink line | Plain line | Anything else |
+| Realm | A coloured area with a dashed border | Draw round the realm; it closes itself and only colours the land (section 10) |
+
+**Auto-route** (on by default for roads, trails, borders and walls): drag from one place to another and the road finds its own way round seas, lakes and mountains, joining existing roads where it can. Untick it to draw freehand.
 
 Lines are on the **Assets** layer. Select one to change its **Kind**, **Width** or **Opacity** in Properties, move it, copy it or delete it. To change a line's path, delete it and draw it again. For wide roads or dirt areas painted freehand, use the **Ground** brush instead (section 6).
 
@@ -239,7 +245,19 @@ Floors: stone, cobbles, wood, dirt, grass, sand, rock, snow, water, lava, or non
 
 ### Texture brush
 
-Choose **Texture** (key **X**) to paint a texture straight onto the ground: grass, dirt, sand, rock, snow, stone, cobbles, wood, water or lava. In the bar set the **Size**, **Soft** (edge softness) and **Strength**. **Land only** keeps paint off the sea, and **Erase** removes texture paint. Textures move and resize with their landmass, and the Ocean brush wipes them away.
+Choose **Texture** (key **X**) to paint a texture straight onto the ground: grass, dirt, sand, rock, snow, stone, cobbles, wood, water, marsh, jungle or lava. In the bar set the **Size**, **Soft** (edge softness) and **Strength**. **Land only** keeps paint off the sea, and **Erase** removes texture paint. Textures move and resize with their landmass, and the Ocean brush wipes them away.
+
+### Dungeon tool
+
+Choose **Dungeon** (key **D**) to carve a dungeon out of solid rock, one grid square at a time. Walls are drawn round the edge automatically, and corridors join rooms neatly.
+
+| Mode | What it does |
+| --- | --- |
+| Carve room | Drag a rectangle of squares |
+| Carve squares | Drag to carve corridors; **Brush** sets 1 × 1, 2 × 2 or 3 × 3 squares |
+| Fill in | Turn squares back into rock (or hold Alt in either carve mode) |
+
+**Floor**, **Wall** and **Width** apply to the whole floor plan. **Random dungeon…** rolls a complete dungeon (section 10) and **Clear** fills everything back in. Add **Door**, **Secret Door**, **Stairs** and the rest from the Battle assets.
 
 ### Snap to grid
 
@@ -263,11 +281,49 @@ With several items selected, **Add drop shadow** and **Remove effects** apply to
 
 With nothing selected, **Coastline & colours** in Properties sets the number of sea **Ripples**, their **Spacing**, the **Coast line** thickness, and the **Sea colour** and **Land colour**. **Default** puts each one back to the style's own setting.
 
+### Lighting
+
+With nothing selected, open **Lighting** in Properties and tick **Darkness with light sources**. The map darkens (set **Darkness** and the **Night colour**), and campfires, wall torches, fireplaces, cauldrons, lanterns, street lights, lighthouses and reactors give off pools of light. To make any item a light, or change a light's size and colour, select it and open **Light** in Properties. Labels stay bright.
+
+### Layer effects
+
+**Layer effects** in Properties apply to a whole layer at once: **Opacity**, **Drop shadow** and **Glow** for the Assets layer and the Text layer, for example a soft shadow under every label.
+
 ### Map look (filters)
 
 **Map look** in Properties changes the whole picture: **Brightness**, **Contrast**, **Saturation**, **Hue**, **Sepia** (for an aged look) and **Vignette** (darkened edges). These are included when you export.
 
-## 10. Text labels
+## 10. Random maps, realms and linked maps
+
+### Random maps
+
+Click **🎲 Generate random map…** in Properties (with nothing selected), **File → Generate Random Map…**, or **🎲 Random map…** in the welcome window. Choose a tab:
+
+| Tab | What it makes | Options |
+| --- | --- | --- |
+| World | Land, mountain ranges, hills, forests, rivers running to the sea, towns with names, roads between them, realms, ships, sea names, a title and compass | One continent, a few large islands or many small islands; amount of land; number of realms; tick what to include |
+| Town | Streets, a market square, houses, inns, chapel, smithy, market stalls, trees, a windmill, and optionally a river with bridges and a town wall with gatehouses | Hamlet, village, town or city; name; eastern style (pagoda and shrine gate). On a Battle Map the buildings are drawn from above |
+| Dungeon | Rooms joined by corridors, doors and secret doors, furniture, traps, treasure, torches and room numbers, in solid rock | Number of rooms, room size, corridor width, floor and wall, optional darkness lit by torches |
+
+The **Seed** decides the map: the same seed and options always make the same map, and 🎲 picks a new one. Everything generated can be edited, moved or deleted like anything you add yourself. Generating replaces what is on the current map; Undo (Ctrl+Z) brings it back.
+
+### Realms
+
+Choose **Lines**, pick **Realm (coloured area)** and draw round the realm's border. The area fills with a colour, gets a dashed border, and only colours the land, so you can draw roughly across the sea. A name label is added in the middle (untick **Add name label** to skip it). Select a realm by clicking its border; Properties sets its **Name** (the label changes too), **Colour** and strength, **Border** width and **Only colour the land**.
+
+### Map key
+
+Click **+ Map key** in the Text tool bar or **Add map key** in Properties. The key lists every realm with its colour and, with **Index of places** ticked, every label with its grid square (for example **C4**; turn the grid on for square references). It updates by itself as you add, rename or remove things, and moves, scales and rotates like any label.
+
+### Linked maps
+
+Any item can open another map, for example a castle on your world map opening its town map. Select the item, open **Linked map** in Properties and click **Choose map…**. A small blue link badge appears above the item. Double-click the item (with the Select tool) to open the linked map; the blue **◀ Back** button in the top bar returns to the map you came from. Saved maps are saved automatically before the switch. Keep linked maps in the same folder and the links still work when you move the folder.
+
+### Measuring distances
+
+Choose **Measure** (key **M**) and drag between two points. The distance appears on the map and at the bottom of the window, and on battle maps in squares too. In the Measure bar set the map's scale, for example **100 px = 10 miles**; **1 square = 5 ft** sets the usual battle-map scale.
+
+## 11. Text labels
 
 Labels sit on the top layer, so nothing you add later can cover them. Add them last.
 
@@ -289,7 +345,7 @@ More settings are in Properties when a label is selected (double-click a label t
 
 Fonts included: IM Fell English, IM Fell English SC, Uncial Antiqua, Cinzel, Macondo, EB Garamond and Caveat suit fantasy maps; Orbitron suits sci-fi; Georgia and Arial are plain choices.
 
-## 11. Moving around the map
+## 12. Moving around the map
 
 | To | Do this |
 | --- | --- |
@@ -302,7 +358,7 @@ Fonts included: IM Fell English, IM Fell English SC, Uncial Antiqua, Cinzel, Mac
 
 **100%** shows the map at the exact size it will export at. The numbers at the bottom left of the map show the mouse position in map pixels and, on battle maps, which grid square it is in.
 
-## 12. Map size, saving and exporting
+## 13. Map size, saving and exporting
 
 ### Map size, grid and border
 
@@ -323,23 +379,35 @@ Fonts included: IM Fell English, IM Fell English SC, Uncial Antiqua, Cinzel, Mac
 
 PNG keeps every detail and is best for printing and further editing; JPG files are smaller and better for sharing online. Hidden layers are left out of the picture.
 
-## 13. Keyboard shortcuts
+### SVG, PDF and printing
+
+Click **More…** in the top bar (or use the File menu):
+
+| Choice | What you get |
+| --- | --- |
+| **SVG** | A vector file. Icons, the grid, the border and labels stay sharp at any size and can be edited in Inkscape or Illustrator; the fonts are built in. Land, sea, textures, rooms and lines are included as one picture underneath |
+| **PDF** | A print-ready page: A4, A3, A2, A1, Letter, Tabloid, or **Map size** for a poster. Choose orientation and margin; the map is drawn at about 300 dots per inch |
+| **Print** (Ctrl+P) | The same page sent straight to a printer |
+
+## 14. Keyboard shortcuts
 
 On a Mac use Cmd wherever Ctrl is shown. Shortcuts don't fire while you are typing in a text box, so Ctrl+C and Ctrl+V work normally there. Press **F1** or choose **Help → User Guide** to open this guide inside the app; **Help → Keyboard Shortcuts** shows a short list.
 
 | Keys | Action |
 | --- | --- |
-| V · S · B · E · G · X · P · L · U · T · H | Select · Stamp · Land · Ocean · Fill · Texture · Ground · Lines · Shapes · Text · Pan |
+| V · S · B · E · G · X · P · L · U · D · T · M · H | Select · Stamp · Land · Ocean · Fill · Texture · Ground · Lines · Shapes · Dungeon · Text · Measure · Pan |
 | 1 · 2 · 3 | Make Land · Assets · Text the active layer |
 | Ctrl+N · Ctrl+O · Ctrl+S | New · Open · Save |
 | Ctrl+Shift+S | Save As |
 | Ctrl+E · Ctrl+Shift+E | Export PNG · Export JPG |
+| Ctrl+P | Print |
 | Ctrl+Z · Ctrl+Y (or Ctrl+Shift+Z) | Undo · Redo |
 | Ctrl+C · Ctrl+X · Ctrl+V | Copy · Cut · Paste (at the mouse, same size) |
 | Ctrl+D, or Alt+drag | Duplicate |
 | Ctrl+A | Select everything on the active layer |
 | Delete | Delete the selection (or the selected landmass) |
-| Esc | Clear the selection; finish a landmass edit; cancel a polygon |
+| Esc | Clear the selection; finish a landmass edit; cancel a polygon; clear the measuring line |
+| Double-click an item | Open its linked map |
 | Enter · Backspace | Close a polygon · remove its last point |
 | Arrow keys (Shift for 10 px) | Nudge the selection |
 | R · Shift+R | Rotate 15° clockwise · anticlockwise |
@@ -352,7 +420,7 @@ On a Mac use Cmd wherever Ctrl is shown. Shortcuts don't fire while you are typi
 | Space+drag, middle mouse drag | Pan |
 | F1 | Open this user guide |
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 Most surprises come from the active layer: check which layer is highlighted in the Layers panel first.
 
@@ -367,19 +435,22 @@ Most surprises come from the active layer: check which layer is highlighted in t
 | An exported picture has no labels | The Text layer is hidden; show it and export again |
 | A pasted copy appears in the wrong place | Copies paste where the mouse pointer is; with the pointer off the map they land just beside the original |
 | Items don't snap to the grid | Tick **Snap** in the top bar and choose a **Square** grid |
+| "Can't find the linked map" | The linked file was moved or renamed: select the item and choose the map again in **Linked map** |
+| Lighting does nothing | Turn on **Lighting** in the map's Properties; a light only shows while lighting is on |
+| A road came out straight with a warning | There is no way over land between the two ends (for example across the sea); draw it with Auto-route unticked |
 | The app closed before you saved | Start it again and click **Recover unsaved map** |
 | You made a mistake | Undo (Ctrl+Z) goes back up to 60 steps |
 | Windows: "Windows protected your PC" | Click **More info**, then **Run anyway** |
 | Mac: "the app is damaged" or can't be opened | Right-click the app and choose **Open**; if it still refuses, run `xattr -cr "/Applications/Pocket-Mapp-Creator.app"` in Terminal |
 
-## 15. Licences and credits
+## 16. Licences and credits
 
 Maps you make with the built-in assets and fonts are yours to use, including commercially, with no credit required.
 
 | Part | Licence | Credit |
 | --- | --- | --- |
-| Pocket-Mapp-Creator software | MIT | © 2026 project-tech-me · project-tech-me@protonmail.com |
-| 157 built-in map assets (all three styles) | CC0 1.0, public domain | Original artwork made for Pocket-Mapp-Creator by project-tech-me |
+| Pocket-Mapp-Creator software | MIT | © 2026 Pocket-Designs · pocket-designs@proton.me |
+| 157 built-in map assets (all five styles) | CC0 1.0, public domain | Original artwork made for Pocket-Mapp-Creator by Pocket-Designs |
 | Label fonts: IM Fell English, IM Fell English SC, Uncial Antiqua, Cinzel, Macondo, EB Garamond, Caveat, Orbitron | SIL Open Font Licence 1.1 | Their designers, listed in the licence file |
 | Product icon | All rights reserved | **MJO-Art** · workmjo@gmail.com. The icon files are custom images created by MJO-Art for this project and can not be altered or used without the express permission of the Artist |
 

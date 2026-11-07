@@ -1,4 +1,4 @@
-// Pocket-Mapp-Creator — in-app User Guide behaviour. Copyright (c) 2026 project-tech-me — MIT Licence
+// Pocket-Mapp-Creator — in-app User Guide behaviour. Copyright (c) 2026 Pocket-Designs — MIT Licence
 (function () {
   const doc = document.getElementById('doc');
   const links = [...document.querySelectorAll('#toc a')];

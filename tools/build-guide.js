@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*
  * Builds the in-app User Guide (src/guide/index.html) from docs/USER-GUIDE.md.
- * Copyright (c) 2026 project-tech-me — MIT Licence
+ * Copyright (c) 2026 Pocket-Designs — MIT Licence
  *
  * Edit docs/USER-GUIDE.md (GitHub shows it as a page), then run:  npm run guide
  * The installer build scripts run this automatically.

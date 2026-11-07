@@ -1,10 +1,10 @@
 {
   "name": "pocket-mapp-creator",
   "productName": "Pocket-Mapp-Creator",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Desktop fantasy, sci-fi, modern and realistic map maker - parchment, full colour and watercolour styles.",
   "main": "main.js",
-  "author": "project-tech-me <project-tech-me@protonmail.com>",
+  "author": "Pocket-Designs <pocket-designs@proton.me>",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -16,7 +16,7 @@
     "guide": "node tools/build-guide.js"
   },
   "build": {
-    "appId": "com.projecttechme.pocketmappcreator",
+    "appId": "com.pocketdesigns.pocketmappcreator",
     "productName": "Pocket-Mapp-Creator",
     "files": [
       "main.js",
@@ -62,7 +62,7 @@
       ],
       "category": "Graphics",
       "icon": "build/icon.png",
-      "maintainer": "project-tech-me <project-tech-me@protonmail.com>",
+      "maintainer": "Pocket-Designs <pocket-designs@proton.me>",
       "syncDesktopName": true
     },
     "mac": {
@@ -101,10 +101,10 @@
     "electron-builder": "^26.15.3",
     "marked": "^18.1.2"
   },
-  "homepage": "https://github.com/Projects-me-design/Pocket-Mapp-Creator",
+  "homepage": "https://github.com/Pocket-Designs/Pocket-Mapp-Creator",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Projects-me-design/Pocket-Mapp-Creator.git"
+    "url": "https://github.com/Pocket-Designs/Pocket-Mapp-Creator.git"
   },
   "engines": {
     "node": ">=24"

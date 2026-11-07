@@ -1,5 +1,5 @@
 // Pocket-Mapp-Creator — editor
-// Copyright (c) 2026 project-tech-me <project-tech-me@protonmail.com> — MIT Licence
+// Copyright (c) 2026 Pocket-Designs <pocket-designs@proton.me> — MIT Licence
 (function () {
   'use strict';
   const MT = window.MT;
@@ -15,8 +15,9 @@
 
   const KIND_BASE = { world: 0.8, town: 1, battle: 0.55, decor: 1.2 };
   const FONTS = ['IM Fell English', 'IM Fell English SC', 'Uncial Antiqua', 'Cinzel', 'Macondo', 'EB Garamond', 'Caveat', 'Orbitron', 'Georgia', 'Arial'];
-  const INK = { parchment: '#3b2817', colour: '#2d2216', watercolour: '#4a3a2b' };
-  const PAPER = { parchment: '#f1e3bf', colour: '#f6efdc', watercolour: '#f7efdc' };
+  const INK = { parchment: '#3b2817', colour: '#2d2216', watercolour: '#4a3a2b', copperplate: '#1c2633', night: '#ecdfb8' };
+  const PAPER = { parchment: '#f1e3bf', colour: '#f6efdc', watercolour: '#f7efdc', copperplate: '#f3eddb', night: '#1e2b45' };
+  const STYLE_DESC = { parchment: 'Tolkien-style sepia ink on parchment', colour: 'Bold, saturated, game-ready', watercolour: 'Soft washes with bleeding edges', copperplate: 'Engraved atlas: fine dark ink, hatched seas', night: 'Cream ink and gold leaf on midnight-blue paper' };
   const MAP_TYPES = {
     world: { label: 'World / Region', desc: 'Continents, kingdoms, coastlines — side-view icons', kind: 'world', sizes: [[3000, 2000], [4000, 2800], [2400, 1800], [1920, 1080]] },
     town: { label: 'Town / City / Village', desc: '3/4 view buildings, walls, roads', kind: 'town', sizes: [[2400, 1800], [3000, 2000], [1920, 1080]] },
@@ -24,15 +25,19 @@
   };
   const SHAPE_KINDS = { rect: 'Rectangle room', ellipse: 'Round room', poly: 'Polygon area' };
   const WALL_KINDS = { stone: 'Stone wall', wood: 'Wooden wall', ink: 'Ink outline', none: 'No wall' };
-  const WALL_COL = { stone: { parchment: '#cbb488', colour: '#9a948a', watercolour: '#b9b3a8' }, wood: { parchment: '#bf9d66', colour: '#8a5a2e', watercolour: '#b08560' } };
-  const LINE_KINDS = { river: 'River', road: 'Road (dashed)', trail: 'Trail (dotted)', border: 'Border (dash-dot)', wall: 'Wall (solid)', ink: 'Ink line' };
+  const WALL_COL = { stone: { parchment: '#cbb488', colour: '#9a948a', watercolour: '#b9b3a8', copperplate: '#d6d0bf', night: '#45587f' }, wood: { parchment: '#bf9d66', colour: '#8a5a2e', watercolour: '#b08560', copperplate: '#c9bea2', night: '#4a5a80' } };
+  const LINE_KINDS = { river: 'River', road: 'Road (dashed)', trail: 'Trail (dotted)', border: 'Border (dash-dot)', wall: 'Wall (solid)', ink: 'Ink line', realm: 'Realm (coloured area)' };
+  const REALM_COLS = ['#b5523b', '#3f7fb0', '#5f9a3c', '#c99a2e', '#8a5aa8', '#3c9a8f', '#c7663f', '#6b7fb8', '#9a4f6e', '#7d8a2e'];
+  // assets that give off light when the map's lighting is on (radius in map px at scale 1)
+  const LIGHTS = { campfire: 300, 'wall-torch': 230, fireplace: 280, cauldron: 160, 'stone-lantern': 220, streetlight: 280, lighthouse: 420, reactor: 320, lava: 0, 'landing-pad': 0, altar: 140, 'treasure-pile': 120 };
+  const LIGHT_COL = { campfire: '#ffb347', 'wall-torch': '#ffb347', fireplace: '#ffb347', cauldron: '#9dff8a', 'stone-lantern': '#ffd27a', streetlight: '#fff2c4', lighthouse: '#fff2c4', reactor: '#8fd8ff', altar: '#c7a8ff', 'treasure-pile': '#ffe08a' };
 
   // ------------------------------------------------------------------ state
   let doc = null;
   let filePath = null;
   let landMask, pathMask, maskScale = 1;
   let texMasks = {}, texScale = 0.5, texComp = null, lastTexSnap = {};   // texture brush: one soft mask per texture
-  let base = null, baseDirty = true, baseBusy = false;
+  let base = null, baseDirty = true, baseBusy = false, landVer = 0;
   const view = { zoom: 1, ox: 0, oy: 0 };
   let tool = 'select';
   let stampKey = null;
@@ -46,8 +51,11 @@
     shapeKind: 'rect', shapeFill: 'stone', shapeWall: 'stone', shapeWallW: 14,
     textFont: 'IM Fell English', textSize: 60, textColor: null, textBold: false, textItalic: false,
     genre: 'fantasy', kind: 'all', search: '',
-    activeLayer: 'land'
+    activeLayer: 'land',
+    dgMode: 'room', dgBrush: 1, autoRoute: true, realmLabel: true
   };
+  let measure = null, dgDraft = null;   // Measure tool ruler; Dungeon tool room being dragged
+  const mapStack = [];                  // linked maps: where to go back to
   const imgCache = new Map();
   let needsDraw = true;
   const history = []; let hIndex = -1;
@@ -72,6 +80,9 @@
       look: { bright: 100, contrast: 100, sat: 100, hue: 0, sepia: 0, vignette: 0 },
       coast: { rings: null, gap: null, width: null, sea: null, land: null },
       layers: { water: { visible: true, locked: false }, land: { visible: true, locked: false }, assets: { visible: true, locked: false }, text: { visible: true, locked: false } },
+      dungeon: null,                                   // squares carved with the Dungeon tool
+      scale: type === 'battle' ? { px: 70, units: 5, name: 'ft' } : { px: 100, units: 10, name: 'miles' },   // for the Measure tool
+      light: { on: false, dark: 0.7, color: '#0a1022' },
       border: type !== 'battle',
       objects: [],
       custom: {}
@@ -154,7 +165,7 @@
     status('Inking coastlines…');
     const run = () => {
       try {
-        base = MT.renderBase(baseOpts(maskScale)); rebuildTexComposite();
+        base = MT.renderBase(baseOpts(maskScale)); landVer++; rebuildTexComposite();
       } finally {
         baseBusy = false; baseDirty = false; needsDraw = true; status('');
       }
@@ -173,6 +184,7 @@
       return { w: m.w * o.s, h: m.h * o.s };
     }
     if (o.t === 'shape') { const ww = o.wall === 'none' ? 0 : (o.wallW || 0); return { w: o.w * o.s + ww, h: o.h * o.s + ww }; }
+    if (o.t === 'legend') { const L = legendLayout(o); return { w: L.w * o.s, h: L.h * o.s }; }
     return { w: 0, h: 0 };
   }
   function fontStr(o) { return `${o.italic ? 'italic ' : ''}${o.bold ? '700 ' : ''}${o.size}px "${o.font}"`; }
@@ -280,10 +292,12 @@
   function lineColours(kind) {
     const L = MT.LOOK[doc.style]; const ink = INK[doc.style];
     const water = doc.style === 'parchment' ? '#dcc79a' : `rgb(${L.shallow ? L.shallow.join(',') : L.sea.join(',')})`;
-    return { ink, water, border: doc.style === 'parchment' ? '#8e4a2c' : '#a33a2a', wall: doc.style === 'parchment' ? '#b99a68' : '#8a847a' };
+    const st = doc.style;
+    return { ink, water, border: st === 'parchment' ? '#8e4a2c' : st === 'night' ? '#d4a94a' : st === 'copperplate' ? '#7a3b2e' : '#a33a2a', wall: st === 'parchment' ? '#b99a68' : st === 'night' ? '#45587f' : st === 'copperplate' ? '#cfc8b4' : '#8a847a' };
   }
   function drawLine(ctx, o) {
     const pts = o.pts; if (!pts || pts.length < 2) return;
+    if (o.kind === 'realm') { drawRealm(ctx, o); return; }
     const C = lineColours(o.kind); const w = o.w;
     ctx.save(); ctx.globalAlpha = o.o ?? 1; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     if (o.kind === 'river') {
@@ -315,9 +329,17 @@
     if (mode === 'center') return { ...p, x: Math.floor(p.x / z) * z + z / 2, y: Math.floor(p.y / z) * z + z / 2 };
     return { ...p, x: Math.round(p.x / z) * z, y: Math.round(p.y / z) * z };
   }
+  // realms sit at the bottom of the Assets layer, then rooms, then everything else
+  const isRealm = (o) => o && o.t === 'line' && o.kind === 'realm';
+  function objRank(o) { return isRealm(o) ? 0 : o.t === 'shape' ? 1 : 2; }
+  function insertLow(o) {   // generated rivers, roads and walls go under the icons
+    let i = 0; while (i < doc.objects.length && (objRank(doc.objects[i]) < 2 || doc.objects[i].t === 'line')) i++;
+    doc.objects.splice(i, 0, o);
+  }
   function insertObj(o) {
-    if (o.t === 'shape') { let i = 0; while (i < doc.objects.length && doc.objects[i].t === 'shape') i++; doc.objects.splice(i, 0, o); }
-    else doc.objects.push(o);
+    const r = objRank(o); if (r === 2) { doc.objects.push(o); return; }
+    let i = 0; while (i < doc.objects.length && objRank(doc.objects[i]) <= r) i++;
+    doc.objects.splice(i, 0, o);
   }
   // ---- shapes: rooms and areas with a textured floor and a wall
   function shapePath(ctx, o) {
@@ -358,8 +380,183 @@
     }
     ctx.restore();
   }
+  // ---- realms: coloured areas with a dashed border, kept to the land (like a political map)
+  const realmCache = new Map();
+  function realmPath(ctx, pts) { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); }
+  function drawRealm(ctx, o) {
+    const pts = o.pts; if (pts.length < 3) return;
+    const b = lineBounds(o), bw = b.x1 - b.x0, bh = b.y1 - b.y0; if (bw < 1 || bh < 1) return;
+    const sc = Math.min(devScale(ctx), 3000 / Math.max(bw, bh)), q = Math.round(sc * 8) / 8 || sc;
+    const col = o.color || REALM_COLS[0], w = o.w || 6, clip = o.clip !== false && layerState('land').visible;
+    const key = `${pts.length}|${pts[0]}|${pts[pts.length >> 1]}|${col}|${o.fill ?? 0.3}|${w}|${clip}|${q}|${clip ? landVer : 0}|${doc.style}`;
+    let c = realmCache.get(o.id);
+    if (!c || c._key !== key) {
+      c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(bw * q)); c.height = Math.max(1, Math.ceil(bh * q)); c._key = key;
+      const x = c.getContext('2d'); x.scale(q, q); x.translate(-b.x0, -b.y0);
+      realmPath(x, pts); x.globalAlpha = o.fill ?? 0.3; x.fillStyle = col; x.fill();
+      // a stronger wash just inside the border, as on painted atlas maps
+      x.save(); realmPath(x, pts); x.clip(); x.globalAlpha = Math.min(1, (o.fill ?? 0.3) + 0.25); x.strokeStyle = col; x.lineWidth = w * 3.2; x.lineJoin = 'round'; realmPath(x, pts); x.stroke(); x.restore();
+      x.globalAlpha = 1; x.strokeStyle = col; x.lineWidth = w * 0.55; x.lineJoin = 'round'; x.setLineDash([w * 2.2, w * 1.3]); realmPath(x, pts); x.stroke(); x.setLineDash([]);
+      if (clip) { x.globalCompositeOperation = 'destination-in'; x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(landMask, b.x0 * maskScale, b.y0 * maskScale, bw * maskScale, bh * maskScale, 0, 0, c.width, c.height); }
+      if (realmCache.size > 60) realmCache.clear();
+      realmCache.set(o.id, c);
+    }
+    ctx.save(); ctx.globalAlpha = o.o ?? 1; ctx.drawImage(c, b.x0, b.y0, bw, bh); ctx.restore();
+  }
+  function pointInPoly(x, y, pts) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi || 1e-9) + xi) inside = !inside; }
+    return inside;
+  }
+
+  // ---- dungeon floor plan: grid squares carved out of solid rock (Dungeon tool)
+  function dungeonData(create = true) {
+    if (!doc.dungeon && create) doc.dungeon = { size: doc.grid.type === 'square' ? doc.grid.size : 70, cells: [], fill: 'stone', wall: 'stone', wallW: 12, v: 0 };
+    return doc.dungeon;
+  }
+  const dgCache = { ref: null, v: -1, n: -1 };
+  function dungeonPaths() {
+    const D = doc.dungeon; if (!D || !D.cells.length) return null;
+    if (dgCache.ref === D && dgCache.v === D.v && dgCache.n === D.cells.length) return dgCache;
+    const z = D.size, set = new Set(D.cells), floor = new Path2D(), walls = new Path2D();
+    const rows = new Map(), H = new Map(), V = new Map();
+    const add = (m, line, a) => { if (!m.has(line)) m.set(line, new Set()); m.get(line).add(a); };
+    for (const k of D.cells) {
+      const [x, y] = k.split(',').map(Number);
+      if (!rows.has(y)) rows.set(y, []); rows.get(y).push(x);
+      if (!set.has(`${x},${y - 1}`)) add(H, y, x); if (!set.has(`${x},${y + 1}`)) add(H, y + 1, x);
+      if (!set.has(`${x - 1},${y}`)) add(V, x, y); if (!set.has(`${x + 1},${y}`)) add(V, x + 1, y);
+    }
+    const runs = (arr, fn) => { const a = [...arr].sort((p, q) => p - q); let st = a[0], pr = a[0]; for (let i = 1; i <= a.length; i++) { if (i < a.length && a[i] === pr + 1) { pr = a[i]; continue; } fn(st, pr); if (i < a.length) st = pr = a[i]; } };
+    for (const [y, xs] of rows) runs(xs, (a, b) => floor.rect(a * z, y * z, (b - a + 1) * z, z));
+    for (const [y, xs] of H) runs(xs, (a, b) => { walls.moveTo(a * z, y * z); walls.lineTo((b + 1) * z, y * z); });
+    for (const [x, ys] of V) runs(ys, (a, b) => { walls.moveTo(x * z, a * z); walls.lineTo(x * z, (b + 1) * z); });
+    Object.assign(dgCache, { ref: D, v: D.v, n: D.cells.length, floor, walls });
+    return dgCache;
+  }
+  function drawDungeon(ctx) {
+    const P = dungeonPaths(); if (!P) return;
+    const D = doc.dungeon, ink = INK[doc.style], W = D.wallW || 12, dk = devScale(ctx);
+    ctx.save();
+    if (D.fill && D.fill !== 'none') {
+      const pat = ctx.createPattern(MT.textureTile(D.fill, doc.style), 'repeat'); ctx.fillStyle = pat; ctx.fill(P.floor);
+      if (D.wall !== 'none') { ctx.save(); ctx.clip(P.floor); ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = Math.max(4, W * 1.3) * dk; ctx.strokeStyle = ink; ctx.lineWidth = W * 1.4; ctx.stroke(P.walls); ctx.restore(); }
+    }
+    if (D.wall && D.wall !== 'none') {
+      ctx.lineCap = 'square'; ctx.lineJoin = 'miter';
+      if (D.wall === 'ink') { ctx.strokeStyle = ink; ctx.lineWidth = Math.max(1, W * 0.45); ctx.stroke(P.walls); }
+      else {
+        ctx.strokeStyle = ink; ctx.lineWidth = W + 3; ctx.stroke(P.walls);
+        ctx.strokeStyle = (WALL_COL[D.wall] || WALL_COL.stone)[doc.style] || WALL_COL.stone.parchment; ctx.lineWidth = W; ctx.stroke(P.walls);
+        ctx.globalAlpha = 0.45; ctx.strokeStyle = ink; ctx.lineWidth = Math.max(0.6, W * 0.12); ctx.lineCap = 'butt';
+        if (D.wall === 'stone') ctx.setLineDash([W * 1.6, W * 0.9]); ctx.stroke(P.walls); ctx.setLineDash([]);
+      }
+    }
+    ctx.restore();
+  }
+  function dgCell(p) { const z = dungeonData().size; return [Math.floor(p.x / z), Math.floor(p.y / z)]; }
+  function dgApply(keys, erase) {
+    const D = dungeonData(), set = new Set(D.cells); let ch = false;
+    for (const k of keys) { if (erase) { if (set.delete(k)) ch = true; } else if (!set.has(k)) { set.add(k); ch = true; } }
+    if (ch) { D.cells = [...set]; D.v = (D.v || 0) + 1; needsDraw = true; }
+    return ch;
+  }
+  function dgBrushKeys(c) { const n = ui.dgBrush || 1, o = Math.floor((n - 1) / 2), out = []; for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) out.push(`${c[0] - o + a},${c[1] - o + b}`); return out; }
+  function dgRectKeys(a, b) { const out = []; for (let y = Math.min(a[1], b[1]); y <= Math.max(a[1], b[1]); y++) for (let x = Math.min(a[0], b[0]); x <= Math.max(a[0], b[0]); x++) out.push(`${x},${y}`); return out; }
+
+  // ---- map key: lists the realms and, optionally, every place label with its grid square
+  const COL_LETTERS = (i) => { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+  function gridRef(x, y) {
+    const z = doc.grid.type === 'square' ? doc.grid.size : Math.max(doc.width, doc.height) / 10;
+    return `${COL_LETTERS(Math.floor(x / z))}${Math.floor(y / z) + 1}`;
+  }
+  function legendRows(o) {
+    const rows = [];
+    if (o.realms !== false) for (const r of doc.objects) if (isRealm(r) && !r.hidden) rows.push({ sw: r.color, text: r.name || 'Realm' });
+    if (o.places) {
+      const pl = doc.objects.filter((t) => t.t === 'text' && !t.hidden && !t.noIndex && !t.realmOf && t.text.trim()).map((t) => ({ text: t.text.replace(/\n/g, ' '), ref: gridRef(t.x, t.y) }));
+      pl.sort((a, b) => a.text.localeCompare(b.text));
+      if (pl.length && rows.length) rows.push({ gap: true });
+      rows.push(...pl.slice(0, 40));
+    }
+    return rows;
+  }
+  function legendLayout(o) {
+    const fs = o.size || 28, pad = fs * 0.8, rows = legendRows(o);
+    measureCtx.font = `${fs}px "${o.font || 'IM Fell English'}"`; measureCtx.letterSpacing = '0px';
+    let w = 0; for (const r of rows) if (!r.gap) w = Math.max(w, measureCtx.measureText(r.text).width + (r.sw ? fs * 1.5 : 0) + (r.ref ? measureCtx.measureText(' ' + r.ref).width + fs : 0));
+    measureCtx.font = `700 ${fs * 1.25}px "${o.font || 'IM Fell English'}"`; w = Math.max(w, measureCtx.measureText(o.title || 'Key').width);
+    const lh = fs * 1.35, h = pad * 2 + fs * 1.7 + rows.reduce((a, r) => a + (r.gap ? lh * 0.5 : lh), 0) + (rows.length ? 0 : lh);
+    return { w: w + pad * 2, h, rows, fs, pad, lh };
+  }
+  function drawLegend(ctx, o) {
+    const L = legendLayout(o), ink = INK[doc.style], font = o.font || 'IM Fell English';
+    ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(rad(o.r || 0)); ctx.scale(o.s, o.s); ctx.globalAlpha = o.o ?? 1;
+    const x0 = -L.w / 2, y0 = -L.h / 2;
+    withFx(ctx, o.ef, devScale(ctx), () => { ctx.fillStyle = PAPER[doc.style]; ctx.fillRect(x0, y0, L.w, L.h); });
+    ctx.strokeStyle = ink; ctx.lineWidth = L.fs * 0.1; ctx.strokeRect(x0, y0, L.w, L.h);
+    ctx.lineWidth = L.fs * 0.04; ctx.strokeRect(x0 + L.fs * 0.22, y0 + L.fs * 0.22, L.w - L.fs * 0.44, L.h - L.fs * 0.44);
+    ctx.fillStyle = ink; ctx.textBaseline = 'middle';
+    ctx.font = `700 ${L.fs * 1.25}px "${font}"`; ctx.textAlign = 'center'; ctx.fillText(o.title || 'Key', 0, y0 + L.pad + L.fs * 0.55);
+    let y = y0 + L.pad + L.fs * 1.7 + L.lh / 2;
+    ctx.font = `${L.fs}px "${font}"`;
+    if (!L.rows.length) { ctx.globalAlpha *= 0.6; ctx.fillText('(add realms or labels)', 0, y); }
+    for (const r of L.rows) {
+      if (r.gap) { y += L.lh * 0.5; continue; }
+      let x = x0 + L.pad;
+      if (r.sw) { ctx.save(); ctx.globalAlpha *= 0.75; ctx.fillStyle = r.sw; ctx.fillRect(x, y - L.fs * 0.4, L.fs * 1.1, L.fs * 0.8); ctx.restore(); ctx.strokeRect(x, y - L.fs * 0.4, L.fs * 1.1, L.fs * 0.8); x += L.fs * 1.5; }
+      ctx.textAlign = 'left'; ctx.fillStyle = ink; ctx.fillText(r.text, x, y);
+      if (r.ref) { ctx.textAlign = 'right'; ctx.fillText(r.ref, x0 + L.w - L.pad, y); }
+      y += L.lh;
+    }
+    ctx.restore();
+  }
+
+  // ---- lighting: darkness over the map with pools of light round torches, fires and lamps
+  function lightOf(o) {
+    if (o.t !== 'asset' || o.hidden) return null;
+    if (o.light === false) return null;
+    if (o.light && o.light.r) return { r: o.light.r, color: o.light.color || '#ffd27a' };
+    const r = LIGHTS[o.a]; if (!r) return null;
+    const inf = assetInfo(o.a); return { r: r * (inf ? inf.base / 0.55 : 1) * Math.sqrt(o.s), color: LIGHT_COL[o.a] || '#ffd27a' };
+  }
+  let darkCache = null;
+  function drawLighting(ctx) {
+    const L = doc.light; if (!L || !L.on) return;
+    const lights = []; for (const o of doc.objects) { const l = lightOf(o); if (l) lights.push([o.x, o.y, l.r, l.color]); }
+    const sc = Math.min(1, 1600 / Math.max(doc.width, doc.height));
+    const key = JSON.stringify([lights, L.dark, L.color, doc.width, doc.height]);
+    if (!darkCache || darkCache._key !== key) {
+      const c = document.createElement('canvas'); c.width = Math.ceil(doc.width * sc); c.height = Math.ceil(doc.height * sc); c._key = key;
+      const x = c.getContext('2d'); x.scale(sc, sc);
+      x.fillStyle = L.color; x.globalAlpha = L.dark; x.fillRect(0, 0, doc.width, doc.height); x.globalAlpha = 1;
+      x.globalCompositeOperation = 'destination-out';
+      for (const [lx, ly, r] of lights) { const g = x.createRadialGradient(lx, ly, 0, lx, ly, r); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.45, 'rgba(0,0,0,.85)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(lx - r, ly - r, r * 2, r * 2); }
+      darkCache = c;
+    }
+    ctx.save(); ctx.drawImage(darkCache, 0, 0, doc.width, doc.height);
+    ctx.globalCompositeOperation = 'screen';
+    for (const [lx, ly, r, col] of lights) { const g = ctx.createRadialGradient(lx, ly, 0, lx, ly, r * 0.8); g.addColorStop(0, col + '66'); g.addColorStop(1, col + '00'); ctx.fillStyle = g; ctx.fillRect(lx - r, ly - r, r * 2, r * 2); }
+    ctx.restore();
+  }
+
+  // ---- layer effects (like sheet effects): opacity, shadow and glow for a whole layer
+  function layerFx(id) { const f = layerState(id).fx; return f && (f.shadow || f.glow || (f.opacity != null && f.opacity < 1)) ? f : null; }
+  function drawLayer(ctx, id, paint) {
+    const f = layerFx(id); if (!f) { paint(ctx); return; }
+    const off = document.createElement('canvas'); off.width = ctx.canvas.width; off.height = ctx.canvas.height;
+    const x = off.getContext('2d'); x.setTransform(ctx.getTransform()); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+    paint(x);
+    const k = devScale(ctx);
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = f.opacity ?? 1;
+    if (f.glow) { ctx.save(); ctx.shadowColor = f.glowColor || '#ffd84a'; ctx.shadowBlur = 18 * k; ctx.drawImage(off, 0, 0); ctx.restore(); }
+    if (f.shadow) { ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 10 * k; ctx.shadowOffsetX = 6 * k; ctx.shadowOffsetY = 8 * k; }
+    ctx.drawImage(off, 0, 0); ctx.restore();
+  }
+
   function drawObject(ctx, o) {
     if (o.hidden) return;
+    if (o.t === 'legend') { drawLegend(ctx, o); return; }
     if (o.t === 'shape') { drawShape(ctx, o); return; }
     if (o.t === 'asset') drawAsset(ctx, o);
     else if (o.t === 'text') drawText(ctx, o);
@@ -410,11 +607,12 @@
     if (texLayer && Object.keys(texMasks).length && layerState('land').visible) ctx.drawImage(texLayer, 0, 0, doc.width, doc.height);
     if (opts.floatLand) drawFloatingLand(ctx);
     if (opts.grid !== false) drawGrid(ctx);
-    // layer 3: assets & lines
-    if (layerState('assets').visible) for (const o of doc.objects) if (o.t !== 'text') drawObject(ctx, o);
+    // layer 3: assets & lines (the dungeon floor plan sits at the bottom of it)
+    if (layerState('assets').visible) drawLayer(ctx, 'assets', (c) => { drawDungeon(c); for (const o of doc.objects) if (layerOf(o) === 'assets') drawObject(c, o); });
+    drawLighting(ctx);
     drawBorder(ctx);
     // layer 4: text, always on top so nothing covers the labels
-    if (layerState('text').visible) for (const o of doc.objects) if (o.t === 'text') drawObject(ctx, o);
+    if (layerState('text').visible) drawLayer(ctx, 'text', (c) => { for (const o of doc.objects) if (layerOf(o) === 'text') drawObject(c, o); });
     // vignette: darker, aged edges
     const v = doc.look && doc.look.vignette;
     if (v > 0) {
@@ -458,6 +656,124 @@
       ctx.restore();
     } else if (d.x1 !== undefined) { const o = shapeFromDraft(d); o.o = 0.8; drawShape(ctx, o); }
   }
+  // ---- tool overlays
+  function drawDungeonCursor(ctx) {
+    const z = dungeonData(false)?.size || (doc.grid.type === 'square' ? doc.grid.size : 70);
+    ctx.save(); ctx.lineWidth = 2 / view.zoom;
+    if (dgDraft) {
+      const x0 = Math.min(dgDraft.a[0], dgDraft.b[0]) * z, y0 = Math.min(dgDraft.a[1], dgDraft.b[1]) * z;
+      const w = (Math.abs(dgDraft.a[0] - dgDraft.b[0]) + 1) * z, h = (Math.abs(dgDraft.a[1] - dgDraft.b[1]) + 1) * z;
+      ctx.fillStyle = dgDraft.erase ? 'rgba(200,60,40,.25)' : 'rgba(79,163,224,.25)'; ctx.fillRect(x0, y0, w, h);
+      ctx.strokeStyle = '#4fa3e0'; ctx.strokeRect(x0, y0, w, h);
+      ctx.fillStyle = '#fff'; ctx.font = `${14 / view.zoom}px sans-serif`; ctx.fillText(`${w / z} × ${h / z} squares`, x0 + 6 / view.zoom, y0 - 6 / view.zoom);
+    } else if (hoverPt && !dragState) {
+      const n = ui.dgMode === 'room' ? 1 : ui.dgBrush || 1, o = Math.floor((n - 1) / 2), c = [Math.floor(hoverPt.x / z), Math.floor(hoverPt.y / z)];
+      ctx.strokeStyle = ui.dgMode === 'erase' ? '#e0614f' : '#4fa3e0'; ctx.strokeRect((c[0] - o) * z, (c[1] - o) * z, n * z, n * z);
+    }
+    ctx.restore();
+  }
+  function measureLabel(d) {
+    const S = doc.scale || { px: 100, units: 10, name: 'miles' };
+    const v = (d / S.px) * S.units, nice = v >= 100 ? Math.round(v) : v >= 10 ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100;
+    let t = `${nice} ${S.name}`;
+    if (doc.grid.type === 'square') t += `  ·  ${Math.round((d / doc.grid.size) * 10) / 10} squares`;
+    return t;
+  }
+  function drawMeasure(ctx) {
+    const { a, b } = measure, z = view.zoom, d = Math.hypot(b.x - a.x, b.y - a.y);
+    ctx.save(); ctx.lineCap = 'round';
+    for (const [col, w] of [['rgba(0,0,0,.6)', 5], ['#ffd84a', 2.2]]) {
+      ctx.strokeStyle = col; ctx.lineWidth = w / z; ctx.setLineDash(col === '#ffd84a' ? [10 / z, 6 / z] : []);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.setLineDash([]); for (const p of [a, b]) { ctx.beginPath(); ctx.arc(p.x, p.y, 5 / z, 0, 7); ctx.stroke(); }
+    }
+    if (d > 2) {
+      const t = measureLabel(d); ctx.font = `600 ${15 / z}px sans-serif`;
+      const tw = ctx.measureText(t).width, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 - 18 / z;
+      ctx.fillStyle = 'rgba(20,16,10,.85)'; ctx.fillRect(mx - tw / 2 - 7 / z, my - 12 / z, tw + 14 / z, 24 / z);
+      ctx.fillStyle = '#ffe9a8'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t, mx, my);
+    }
+    ctx.restore();
+    if (!measure.live) status(`Distance: ${measureLabel(d)}`);
+  }
+  function drawLinkBadges(ctx) {
+    if (!layerState('assets').visible) return;
+    const z = view.zoom;
+    for (const o of doc.objects) {
+      if (o.t !== 'asset' || !o.link || o.hidden) continue;
+      const { h } = objSize(o), x = o.x, y = o.y - h / 2 - 4 / z;
+      ctx.save(); ctx.fillStyle = '#2f6fb0'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 / z;
+      ctx.beginPath(); ctx.arc(x, y, 9 / z, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 1.6 / z; ctx.beginPath(); ctx.ellipse(x - 2.4 / z, y + 1.2 / z, 3.6 / z, 2 / z, -0.6, 0, 7); ctx.ellipse(x + 2.4 / z, y - 1.2 / z, 3.6 / z, 2 / z, -0.6, 0, 7); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // ---- roads that find their own way round water and mountains (A* over the land)
+  function landGrid(g) {
+    const gw = Math.ceil(doc.width / g), gh = Math.ceil(doc.height / g);
+    const t = document.createElement('canvas'); t.width = gw; t.height = gh;
+    const x = t.getContext('2d', { willReadFrequently: true }); x.drawImage(landMask, 0, 0, gw, gh);
+    const d = x.getImageData(0, 0, gw, gh).data, land = new Uint8Array(gw * gh);
+    for (let i = 0; i < land.length; i++) land[i] = d[i * 4 + 3] > 100 ? 1 : 0;
+    return { gw, gh, land };
+  }
+  const ROUGH = /mountain|volcano|peak|real-mountain/, HILLY = /hill|dunes|forest|pine-forest/;
+  function routeRoad(a, b, opts = {}) {
+    const g = Math.max(6, Math.max(doc.width, doc.height) / 320);
+    const { gw, gh, land } = opts.grid || landGrid(g);
+    const cost = new Float32Array(gw * gh);
+    for (let i = 0; i < cost.length; i++) cost[i] = land[i] ? 1 : Infinity;
+    const bump = (cx, cy, r, add) => { const r2 = r / g; for (let yy = Math.max(0, Math.floor(cy / g - r2)); yy <= Math.min(gh - 1, Math.ceil(cy / g + r2)); yy++) for (let xx = Math.max(0, Math.floor(cx / g - r2)); xx <= Math.min(gw - 1, Math.ceil(cx / g + r2)); xx++) { const i = yy * gw + xx; if (isFinite(cost[i]) && Math.hypot(xx - cx / g, yy - cy / g) <= r2) cost[i] += add; } };
+    for (const o of doc.objects) {
+      if (o.hidden) continue;
+      if (o.t === 'asset' && (ROUGH.test(o.a) || HILLY.test(o.a))) { const { w } = objSize(o); bump(o.x, o.y, w * 0.42, ROUGH.test(o.a) ? 14 : 2.5); }
+      else if (o.t === 'line' && (o.kind === 'road' || o.kind === 'trail')) for (const [px, py] of o.pts) { const i = Math.floor(py / g) * gw + Math.floor(px / g); if (i >= 0 && i < cost.length && isFinite(cost[i])) cost[i] = Math.min(cost[i], 0.55); }   // join existing roads
+    }
+    const cl = (p) => [clamp(Math.floor(p[0] / g), 0, gw - 1), clamp(Math.floor(p[1] / g), 0, gh - 1)];
+    const s = cl(a), e = cl(b);
+    cost[s[1] * gw + s[0]] = Math.min(isFinite(cost[s[1] * gw + s[0]]) ? cost[s[1] * gw + s[0]] : 1, 1);
+    const path = MT.astar(cost, gw, gh, s, e);
+    if (!path) return null;
+    let pts = path.map(([x, y]) => [(x + 0.5) * g, (y + 0.5) * g]); pts[0] = [a[0], a[1]]; pts[pts.length - 1] = [b[0], b[1]];
+    pts = simplify(pts, g * 0.7);
+    return MT.smoothLine(pts, 3).map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
+  }
+
+  // ---- realms
+  function realmCentre(pts, clear = 0) {
+    // a point near the middle of the realm's land, kept clear of towns, labels and mountains where possible
+    const b = lineBounds({ pts, w: 0 }), step = Math.max(8, Math.max(b.x1 - b.x0, b.y1 - b.y0) / 40), cand = [];
+    for (let y = b.y0; y <= b.y1; y += step) for (let x = b.x0; x <= b.x1; x += step) if (pointInPoly(x, y, pts) && landAt(x, y)) cand.push([x, y]);
+    if (!cand.length) for (let y = b.y0; y <= b.y1; y += step) for (let x = b.x0; x <= b.x1; x += step) if (pointInPoly(x, y, pts)) cand.push([x, y]);
+    if (!cand.length) return [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2];
+    const cx = cand.reduce((a, p) => a + p[0], 0) / cand.length, cy = cand.reduce((a, p) => a + p[1], 0) / cand.length;
+    if (!clear) return [cx, cy];
+    const things = doc.objects.filter((o) => (o.t === 'asset' || o.t === 'text') && !o.hidden);
+    let best = null;
+    for (const [x, y] of cand) {
+      let pen = 0;
+      for (const o of things) { const dx = Math.abs(o.x - x), dy = Math.abs(o.y - y); if (o.t === 'text' ? dx < clear * 2.2 && dy < clear * 0.8 : dx < clear * 1.6 && dy < clear * 0.9) pen += o.t === 'text' ? 6 : 1; }
+      const sc = Math.hypot(x - cx, y - cy) + pen * clear * 1.5;
+      if (!best || sc < best.sc) best = { sc, x, y };
+    }
+    return [best.x, best.y];
+  }
+  function finishRealm(o, opts = {}) {
+    if (o.pts.length < 3) return null;
+    const used = doc.objects.filter(isRealm).length;
+    o.color = o.color || REALM_COLS[used % REALM_COLS.length]; o.fill = o.fill ?? 0.3; o.clip = o.clip ?? true;
+    o.name = o.name || opts.name || `Realm ${used + 1}`;
+    insertObj(o);
+    if (opts.label ?? ui.realmLabel) {
+      const k = Math.min(doc.width, doc.height) / 1400, [cx, cy] = realmCentre(o.pts, opts.clear || 0);
+      const t = addText(cx, cy, { text: o.name, size: Math.round(opts.size || 40 * k), font: 'IM Fell English SC', spacing: 6, upper: false, color: INK[doc.style], halo: true, o: 0.85 });
+      t.realmOf = o.id; o.labelId = t.id;
+    }
+    if (!opts.quiet) { selection.clear(); selection.add(o.id); commit(); refreshPanels(); status('Realm added. Name it and pick its colour in Properties; it only colours the land.'); }
+    return o;
+  }
+
   function finishPolygon() {
     const o = shapeFromDraft(shapeDraft); shapeDraft = null;
     if (o) { o.id = uid(); insertObj(o); selection.clear(); selection.add(o.id); commit(); refreshPanels(); }
@@ -477,7 +793,10 @@
     if (paintPreview) { ctx.globalAlpha = 0.85; ctx.drawImage(paintPreview, 0, 0, doc.width, doc.height); ctx.globalAlpha = 1; }
     if (lineDraft && lineDraft.pts.length > 1) drawLine(ctx, lineDraft);
     if (shapeDraft) drawShapeDraft(ctx);
+    if (tool === 'dungeon') drawDungeonCursor(ctx);
     ctx.restore();
+    if (measure) drawMeasure(ctx);
+    drawLinkBadges(ctx);
     drawSelection(ctx); drawLandSelection(ctx);
     if (marquee) {
       ctx.save(); ctx.strokeStyle = '#4fa3e0'; ctx.fillStyle = 'rgba(79,163,224,.12)'; ctx.lineWidth = 1 / view.zoom; ctx.setLineDash([5 / view.zoom, 4 / view.zoom]);
@@ -539,6 +858,12 @@
   function findObj(id) { return doc.objects.find((o) => o.id === id); }
   function hitObj(o, x, y) {
     if (o.hidden || o.locked) return false;
+    if (isRealm(o)) {   // realms are picked by their border (or anywhere inside once selected), so clicks inside still reach other things
+      if (selection.has(o.id) && pointInPoly(x, y, o.pts)) return true;
+      const tol = (o.w || 6) * 1.5 + 8 / view.zoom;
+      for (let i = 0; i < o.pts.length; i++) { const [ax, ay] = o.pts[i], [bx, by] = o.pts[(i + 1) % o.pts.length]; const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy || 1; const t = clamp(((x - ax) * dx + (y - ay) * dy) / L, 0, 1); if (Math.hypot(x - (ax + t * dx), y - (ay + t * dy)) < tol) return true; }
+      return false;
+    }
     if (o.t === 'line') {
       const tol = o.w / 2 + 6 / view.zoom;
       for (let i = 1; i < o.pts.length; i++) {
@@ -617,7 +942,7 @@
       }
     }
     painting = null;
-    base = MT.renderBase(baseOpts(maskScale)); rebuildTexComposite();
+    base = MT.renderBase(baseOpts(maskScale)); landVer++; rebuildTexComposite();
     baseDirty = false; paintPreview = null; needsDraw = true;
     commit();
   }
@@ -744,7 +1069,7 @@
       for (const [t, tc] of Object.entries(L.tex || {})) stampLand(texMask(t, true), tc, texScale);
     }
     landSel = null;
-    base = MT.renderBase(baseOpts(maskScale)); rebuildTexComposite();
+    base = MT.renderBase(baseOpts(maskScale)); landVer++; rebuildTexComposite();
     baseDirty = false; needsDraw = true;
     if (changed) commit();
     settling = false;
@@ -922,7 +1247,7 @@
     return { seen, touchesEdge: edge, count };
   }
   function afterFill(msg) {
-    base = MT.renderBase(baseOpts(maskScale)); rebuildTexComposite(); baseDirty = false; needsDraw = true;
+    base = MT.renderBase(baseOpts(maskScale)); landVer++; rebuildTexComposite(); baseDirty = false; needsDraw = true;
     commit(); toast(msg, 'ok');
   }
   let leakFlash = null;
@@ -1247,7 +1572,13 @@
       if (landSel) settleLand();
       fillAt(p.x, p.y); return;
     }
-    if ((tool === 'stamp' || tool === 'line') && layerBlocked('assets')) { status(layerBlocked('assets')); return; }
+    if (tool === 'measure') { measure = { a: p, b: p, live: true }; dragState = { type: 'measure' }; needsDraw = true; return; }
+    if ((tool === 'stamp' || tool === 'line' || tool === 'dungeon') && layerBlocked('assets')) { status(layerBlocked('assets')); return; }
+    if (tool === 'dungeon') {
+      const c = dgCell(p), erase = ui.dgMode === 'erase' || e.altKey;
+      if (ui.dgMode === 'room') { dgDraft = { a: c, b: c, erase: e.altKey }; dragState = { type: 'dgRoom' }; needsDraw = true; return; }
+      dgApply(dgBrushKeys(c), erase); dragState = { type: 'dg', erase, last: p }; return;
+    }
     if (tool === 'text' && layerBlocked('text')) { status(layerBlocked('text')); return; }
     if (tool === 'stamp') {
       if (!stampKey) { status('Choose an asset from the library first'); return; }
@@ -1269,7 +1600,12 @@
       shapeDraft = { kind: ui.shapeKind, x0: q.x, y0: q.y, fill: ui.shapeFill, wall: ui.shapeWall, wallW: ui.shapeWallW };
       dragState = { type: 'shape' }; return;
     }
-    if (tool === 'line') { lineDraft = { t: 'line', kind: ui.lineKind, w: ui.lineWidth, o: 1, pts: [[p.x, p.y]] }; dragState = { type: 'line' }; return; }
+    if (tool === 'line') {
+      const routed = ui.autoRoute && !['river', 'realm'].includes(ui.lineKind);
+      lineDraft = { t: 'line', kind: ui.lineKind, w: ui.lineWidth, o: 1, pts: [[p.x, p.y]] };
+      if (routed) lineDraft.pts.push([p.x, p.y]);
+      dragState = { type: 'line', routed }; return;
+    }
     if (tool === 'text') {
       const hit = hitTest(p.x, p.y);
       if (hit && hit.t === 'text') {
@@ -1344,7 +1680,7 @@
 
   stage.addEventListener('pointermove', (e) => {
     const p = toMap(e); hoverPt = p;
-    if (isBrush() || tool === 'texture' || tool === 'stamp' || (tool === 'shape' && shapeDraft)) needsDraw = true;
+    if (isBrush() || tool === 'texture' || tool === 'stamp' || tool === 'dungeon' || (tool === 'shape' && shapeDraft)) needsDraw = true;
     status(`${Math.round(p.x)}, ${Math.round(p.y)}${doc.grid.type === 'square' ? `  ·  square ${Math.floor(p.x / doc.grid.size) + 1}, ${Math.floor(p.y / doc.grid.size) + 1}` : ''}`, true);
     if (!dragState) { updateCursor(p); return; }
     const d = dragState;
@@ -1359,6 +1695,13 @@
       }
     } else if (d.type === 'shape' && shapeDraft) {
       const q = snapPt(p); shapeDraft.x1 = q.x; shapeDraft.y1 = q.y; shapeDraft.square = e.shiftKey; needsDraw = true;
+    } else if (d.type === 'measure') { measure.b = p; needsDraw = true;
+    } else if (d.type === 'dg') {
+      const z = dungeonData().size, n = Math.max(1, Math.ceil(Math.hypot(p.x - d.last.x, p.y - d.last.y) / (z / 3))), keys = [];
+      for (let i = 1; i <= n; i++) keys.push(...dgBrushKeys(dgCell({ x: d.last.x + (p.x - d.last.x) * i / n, y: d.last.y + (p.y - d.last.y) * i / n })));
+      dgApply(keys, d.erase); d.last = p;
+    } else if (d.type === 'dgRoom') { dgDraft.b = dgCell(p); needsDraw = true;
+    } else if (d.type === 'line' && d.routed) { lineDraft.pts[1] = [p.x, p.y]; needsDraw = true;
     } else if (d.type === 'line') {
       const l = lineDraft.pts[lineDraft.pts.length - 1];
       if (Math.hypot(p.x - l[0], p.y - l[1]) > 4 / view.zoom) { lineDraft.pts.push([p.x, p.y]); needsDraw = true; }
@@ -1395,9 +1738,22 @@
       if (o && o.w > 4 && o.h > 4) { o.id = uid(); insertObj(o); selection.clear(); selection.add(o.id); commit(); refreshPanels(); }
       else status('Drag to draw a room: from one corner to the opposite corner.');
     }
+    else if (d.type === 'measure') { measure.live = false; }
+    else if (d.type === 'dg') commit();
+    else if (d.type === 'dgRoom') { if (dgDraft) { dgApply(dgRectKeys(dgDraft.a, dgDraft.b), dgDraft.erase); dgDraft = null; commit(); } }
     else if (d.type === 'line') {
-      if (lineDraft.pts.length > 1) { const o = { id: uid(), ...lineDraft, pts: simplify(lineDraft.pts, 1.5 / view.zoom) }; doc.objects.push(o); commit(); }
-      lineDraft = null;
+      const L = lineDraft; lineDraft = null;
+      if (d.routed) {
+        const [a, b] = L.pts;
+        if (Math.hypot(b[0] - a[0], b[1] - a[1]) > 10 / view.zoom) {
+          const pts = routeRoad(a, b);
+          if (pts) { doc.objects.push({ id: uid(), ...L, pts }); commit(); status('Road routed round the water and mountains. Untick Auto-route to draw roads by hand.'); }
+          else { doc.objects.push({ id: uid(), ...L }); commit(); toast('No route over land between those points, so a straight road was drawn.', 'warn'); }
+        }
+      } else if (L.pts.length > 1) {
+        const o = { id: uid(), ...L, pts: simplify(L.pts, 1.5 / view.zoom) };
+        if (L.kind === 'realm') finishRealm(o); else { doc.objects.push(o); commit(); }
+      }
     } else if (d.type === 'move' && d.moved) commit();
     else if (d.type === 'rotate' || d.type === 'scale') commit();
     else if (d.type === 'marquee') {
@@ -1416,17 +1772,19 @@
   stage.addEventListener('pointerleave', () => { hoverPt = null; needsDraw = true; });
   stage.addEventListener('contextmenu', (e) => e.preventDefault());
   stage.addEventListener('dblclick', (e) => {
-    const p = toMap(e); const hit = hitTest(p.x, p.y, 'text');
+    const p = toMap(e);
+    if (tool === 'select') { const a = hitTest(p.x, p.y, 'assets'); if (a && a.link) { openLinkedMap(a); return; } }
+    const hit = hitTest(p.x, p.y, 'text');
     if (hit && hit.t === 'text') { setActiveLayer('text', true); selection.clear(); selection.add(hit.id); refreshPanels(); setTimeout(() => { $('#propText')?.focus(); $('#propText')?.select(); }, 20); }
   });
   function updateCursor(p) {
     let c = 'default';
     if (tool === 'pan' || spaceDown) c = 'grab';
     else if (isBrush() || tool === 'texture') c = 'none';
-    else if (tool === 'stamp' || tool === 'line' || tool === 'shape') c = 'crosshair';
+    else if (tool === 'stamp' || tool === 'line' || tool === 'shape' || tool === 'dungeon' || tool === 'measure') c = 'crosshair';
     else if (tool === 'fill') c = 'cell';
     else if (tool === 'text') c = 'text';
-    else { const lh = hitLandHandle(p.x, p.y), h = lh ? null : hitHandle(p.x, p.y); if (lh) c = lh === 'rotate' ? 'alias' : 'nwse-resize'; else if (h) c = h.type === 'rotate' ? 'alias' : 'nwse-resize'; else if (hitTest(p.x, p.y) || (landSel && insideLandBox(p.x, p.y))) c = 'move'; else if (ui.activeLayer === 'land' && landAt(p.x, p.y)) c = 'pointer'; }
+    else { const lh = hitLandHandle(p.x, p.y), h = lh ? null : hitHandle(p.x, p.y); if (lh) c = lh === 'rotate' ? 'alias' : 'nwse-resize'; else if (h) c = h.type === 'rotate' ? 'alias' : 'nwse-resize'; else if (hitTest(p.x, p.y) || (landSel && insideLandBox(p.x, p.y))) { c = 'move'; const hh = hitTest(p.x, p.y); if (hh && hh.link) status(`Double-click to open the linked map “${hh.link.name}”`); } else if (ui.activeLayer === 'land' && landAt(p.x, p.y)) c = 'pointer'; }
     stage.style.cursor = c;
   }
   // Ramer–Douglas–Peucker
@@ -1481,6 +1839,7 @@
     if (e.key === 'Enter' && shapeDraft && shapeDraft.kind === 'poly') { finishPolygon(); return; }
     if (e.key === 'Escape' && shapeDraft) { shapeDraft = null; needsDraw = true; return; }
     if ((e.key === 'Backspace') && shapeDraft && shapeDraft.kind === 'poly' && shapeDraft.pts.length) { shapeDraft.pts.pop(); needsDraw = true; return; }
+    if (e.key === 'Escape' && (measure || dgDraft)) { measure = null; dgDraft = null; needsDraw = true; return; }
     if (e.key === 'Escape') { selection.clear(); lineDraft = null; refreshPanels(); needsDraw = true; return; }
     const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     if (arrows[e.key] && selection.size) { const m = e.shiftKey ? 10 : 1; for (const id of selection) moveObj(findObj(id), arrows[e.key][0] * m, arrows[e.key][1] * m); commit(); refreshPropsValues(); needsDraw = true; e.preventDefault(); return; }
@@ -1495,7 +1854,7 @@
     if (e.key === '1') { setActiveLayer('land'); return; }
     if (e.key === '2') { setActiveLayer('assets'); return; }
     if (e.key === '3') { setActiveLayer('text'); return; }
-    const map = { v: 'select', s: 'stamp', b: 'land', e: 'ocean', g: 'fill', x: 'texture', p: 'path', l: 'line', u: 'shape', t: 'text', h: 'pan' };
+    const map = { v: 'select', s: 'stamp', b: 'land', e: 'ocean', g: 'fill', x: 'texture', p: 'path', l: 'line', u: 'shape', d: 'dungeon', m: 'measure', t: 'text', h: 'pan' };
     if (map[e.key.toLowerCase()]) setTool(map[e.key.toLowerCase()]);
   });
   window.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceDown = false; stage.style.cursor = ''; } });
@@ -1509,7 +1868,7 @@
     { id: 'land', name: 'Land', n: 2, sub: 'landmasses & ground paint' },
     { id: 'water', name: 'Water', n: 1, sub: 'base layer' }
   ];
-  function layerOf(o) { return o.t === 'text' ? 'text' : 'assets'; }
+  function layerOf(o) { return o.t === 'text' || o.t === 'legend' ? 'text' : 'assets'; }
   function layerState(id) { return (doc.layers && doc.layers[id]) || { visible: true, locked: false }; }
   function layerUsable(id) { const L = layerState(id); return L.visible && !L.locked; }
   function baseOpts(scale) {
@@ -1567,7 +1926,9 @@
     if (t !== 'shape') shapeDraft = null;
     if (t !== 'select') settleLand();
     tool = t;
-    const want = { land: 'land', ocean: 'land', path: 'land', fill: 'land', texture: 'land', stamp: 'assets', line: 'assets', shape: 'assets', text: 'text' }[t];
+    if (t !== 'measure') measure = null;
+    dgDraft = null;
+    const want = { land: 'land', ocean: 'land', path: 'land', fill: 'land', texture: 'land', stamp: 'assets', line: 'assets', shape: 'assets', dungeon: 'assets', text: 'text' }[t];
     if (want && doc) setActiveLayer(want, true);
     $$('.tool').forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
     renderToolOptions(); needsDraw = true;
@@ -1645,12 +2006,47 @@
       $('#toWall').onchange = (e) => { ui.shapeWall = e.target.value; };
       $('#toWW').oninput = (e) => { ui.shapeWallW = +e.target.value; $('#toWWV').textContent = ui.shapeWallW; };
     } else if (tool === 'line') {
+      const k = ui.lineKind, routable = !['river', 'realm'].includes(k);
       el.innerHTML = `<b>Lines</b>
-        <select id="toKind">${Object.entries(LINE_KINDS).map(([k, v]) => `<option value="${k}" ${k === ui.lineKind ? 'selected' : ''}>${v}</option>`).join('')}</select>
+        <select id="toKind">${Object.entries(LINE_KINDS).map(([kk, v]) => `<option value="${kk}" ${kk === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
         <label>Width <input type="range" id="toLW" min="1" max="40" value="${ui.lineWidth}"> <span id="toLWV">${ui.lineWidth}</span></label>
-        <span class="muted">Rivers: draw from source to sea</span>`;
-      $('#toKind').onchange = (e) => { ui.lineKind = e.target.value; };
+        ${routable ? `<label class="chk" title="Drag from one place to another; the road finds its own way round seas, lakes and mountains"><input type="checkbox" id="toRoute" ${ui.autoRoute ? 'checked' : ''}> Auto-route</label>` : ''}
+        ${k === 'realm' ? `<label class="chk"><input type="checkbox" id="toRLabel" ${ui.realmLabel ? 'checked' : ''}> Add name label</label>` : ''}
+        <span class="muted">${k === 'river' ? 'Rivers: draw from source to sea' : k === 'realm' ? 'Draw round the realm’s border; it closes itself and only colours land' : ui.autoRoute ? 'Drag from start to finish' : 'Drag to draw'}</span>`;
+      $('#toKind').onchange = (e) => { ui.lineKind = e.target.value; renderToolOptions(); };
       $('#toLW').oninput = (e) => { ui.lineWidth = +e.target.value; $('#toLWV').textContent = ui.lineWidth; };
+      if ($('#toRoute')) $('#toRoute').onchange = (e) => { ui.autoRoute = e.target.checked; renderToolOptions(); };
+      if ($('#toRLabel')) $('#toRLabel').onchange = (e) => { ui.realmLabel = e.target.checked; };
+    } else if (tool === 'dungeon') {
+      const D = dungeonData(false) || { fill: 'stone', wall: 'stone', wallW: 12 };
+      const opt = (obj, cur) => Object.entries(obj).map(([kk, v]) => `<option value="${kk}" ${kk === cur ? 'selected' : ''}>${v}</option>`).join('');
+      el.innerHTML = `<b>Dungeon</b>
+        <div class="seg"><button data-dm="room" class="${ui.dgMode === 'room' ? 'on' : ''}" title="Drag a rectangle of squares">Carve room</button><button data-dm="cell" class="${ui.dgMode === 'cell' ? 'on' : ''}" title="Drag to carve corridors square by square">Carve squares</button><button data-dm="erase" class="${ui.dgMode === 'erase' ? 'on' : ''}" title="Fill squares back in with rock">Fill in</button></div>
+        ${ui.dgMode !== 'room' ? `<label>Brush <select id="toDgB">${[1, 2, 3].map((n) => `<option value="${n}" ${n === ui.dgBrush ? 'selected' : ''}>${n} × ${n}</option>`).join('')}</select></label>` : ''}
+        <label>Floor <select id="toDgF">${opt({ ...MT.TEXTURES, none: 'None' }, D.fill)}</select></label>
+        <label>Wall <select id="toDgW">${opt(WALL_KINDS, D.wall)}</select></label>
+        <label>Width <input type="range" id="toDgWW" min="2" max="40" value="${D.wallW}"></label>
+        <button class="mini" id="toDgGen">Random dungeon…</button><button class="mini" id="toDgClear">Clear</button>
+        <span class="muted">Alt = fill in</span>`;
+      el.querySelectorAll('[data-dm]').forEach((b) => b.onclick = () => { ui.dgMode = b.dataset.dm; renderToolOptions(); });
+      if ($('#toDgB')) $('#toDgB').onchange = (e) => { ui.dgBrush = +e.target.value; };
+      const setD = (key, v) => { const DD = dungeonData(); DD[key] = v; DD.v = (DD.v || 0) + 1; needsDraw = true; };
+      $('#toDgF').onchange = (e) => { setD('fill', e.target.value); commit(); };
+      $('#toDgW').onchange = (e) => { setD('wall', e.target.value); commit(); };
+      $('#toDgWW').oninput = (e) => setD('wallW', +e.target.value); $('#toDgWW').onchange = () => commit();
+      $('#toDgGen').onclick = () => generateDialog('dungeon');
+      $('#toDgClear').onclick = async () => { if (doc.dungeon && doc.dungeon.cells.length && await confirmBox('Clear the dungeon floor plan?', 'Every carved square is filled back in. Items and labels stay. You can undo this.')) { doc.dungeon.cells = []; doc.dungeon.v++; commit(); needsDraw = true; } };
+    } else if (tool === 'measure') {
+      const S = doc.scale;
+      el.innerHTML = `<b>Measure</b>
+        <label><input type="number" id="toMpx" min="1" value="${S.px}" style="width:64px"> px =</label>
+        <label><input type="number" id="toMu" min="0.01" step="any" value="${S.units}" style="width:64px"></label>
+        <input type="text" id="toMn" value="${esc(S.name)}" style="width:70px" title="Unit name (miles, km, ft, leagues…)">
+        ${doc.grid.type === 'square' ? '<button class="mini" id="toMgrid">1 square = 5 ft</button>' : ''}
+        <span class="muted">Drag to measure a distance</span>`;
+      const upd = () => { doc.scale = { px: Math.max(1, +$('#toMpx').value || 100), units: Math.max(0.0001, +$('#toMu').value || 1), name: $('#toMn').value.trim() || 'units' }; markDirty(); needsDraw = true; };
+      ['#toMpx', '#toMu', '#toMn'].forEach((id) => { $(id).onchange = upd; });
+      if ($('#toMgrid')) $('#toMgrid').onclick = () => { doc.scale = { px: doc.grid.size, units: 5, name: 'ft' }; markDirty(); renderToolOptions(); needsDraw = true; };
     } else if (tool === 'text') {
       const sel = selection.size === 1 ? findObj([...selection][0]) : null;
       const t = sel && sel.t === 'text' ? sel : null;
@@ -1666,7 +2062,9 @@
         <input type="color" id="toTColor" value="${color}" title="Colour">
         <label class="chk"><input type="checkbox" id="toTBold" ${bold ? 'checked' : ''}> B</label>
         <label class="chk"><input type="checkbox" id="toTItal" ${italic ? 'checked' : ''}> <i>I</i></label>
-        <span class="muted">${t ? 'Drag the label to move it' : 'Pick a font and size, then click the map'}</span>`;
+        <span class="muted">${t ? 'Drag the label to move it' : 'Pick a font and size, then click the map'}</span>
+        <button class="mini" id="toKey" title="A key listing the realms and the places on the map">+ Map key</button>`;
+      $('#toKey').onclick = addLegend;
       const apply = (fn, done) => { fn(); if (t) { needsDraw = true; if (done) { commit(); renderProps(); } } };
       const setSize = (v) => { v = clamp(+v || 12, 6, 600); ui.textSize = v; if (t) { t.size = v; t.s = 1; } $('#toTSize').value = v; $('#toTSizeN').value = v; };
       $('#toFont').onchange = (e) => apply(() => { ui.textFont = e.target.value; if (t) t.font = e.target.value; }, true);
@@ -1769,6 +2167,7 @@
         ${propRow('Name', `<input type="text" id="pName" value="${esc(doc.name)}">`)}
         ${propRow('Type', `<select id="pType">${Object.entries(MAP_TYPES).map(([k, v]) => `<option value="${k}" ${k === doc.type ? 'selected' : ''}>${v.label}</option>`).join('')}</select>`)}
         <div class="row"><label>Size</label><span>${doc.width} × ${doc.height}px</span><button class="mini" data-cmd="resize">Change…</button></div>
+        <div class="btnrow"><button class="mini primary" data-cmd="generate" title="Roll a random world, town or dungeon">🎲 Generate random map…</button><button class="mini" id="pKey">Add map key</button></div>
         <div class="btnrow"><button class="mini" id="pAllLand">Fill with land</button><button class="mini" id="pAllSea">Clear all land</button><button class="mini" id="pClearPaths">Clear ground paint</button></div>
         ${clipboard ? `<div class="btnrow"><button class="mini" id="pPasteMap">Paste ${clipboard.objs.length} copied item${clipboard.objs.length === 1 ? '' : 's'}</button></div>` : ''}
         <div class="panel-sub muted">Grid</div>
@@ -1790,6 +2189,17 @@
         ${propRow('Sepia', `<input type="range" id="lkSepia" min="0" max="100" value="${doc.look.sepia}">`)}
         ${propRow('Vignette', `<input type="range" id="lkVig" min="0" max="100" value="${doc.look.vignette}">`)}
         <div class="btnrow"><button class="mini" id="lkReset">Reset look</button></div>
+        </details>
+        <details class="fxbox" ${doc.light.on ? 'open' : ''}><summary>Lighting</summary>
+        <label class="chk"><input type="checkbox" id="ltOn" ${doc.light.on ? 'checked' : ''}> Darkness with light sources</label>
+        ${propRow('Darkness', `<input type="range" id="ltDark" min="0.1" max="0.95" step="0.05" value="${doc.light.dark}">`)}
+        ${propRow('Night colour', `<input type="color" id="ltCol" value="${doc.light.color}">`)}
+        <p class="muted" style="margin:2px 0 0">Campfires, torches, fireplaces, lanterns, street lights and lighthouses glow by themselves. Any item can be made a light in its Effects.</p>
+        </details>
+        <details class="fxbox"><summary>Layer effects</summary>
+        ${['assets', 'text'].map((id) => { const f = layerState(id).fx || {}; return `<div class="panel-sub muted">${id === 'assets' ? 'Assets layer' : 'Text layer'}</div>
+          ${propRow('Opacity', `<input type="range" data-lfx="${id}:opacity" min="0.1" max="1" step="0.05" value="${f.opacity ?? 1}">`)}
+          <div class="btnrow"><label class="chk"><input type="checkbox" data-lfx="${id}:shadow" ${f.shadow ? 'checked' : ''}> Drop shadow</label><label class="chk"><input type="checkbox" data-lfx="${id}:glow" ${f.glow ? 'checked' : ''}> Glow</label><input type="color" data-lfx="${id}:glowColor" value="${f.glowColor || '#ffd84a'}"></div>`; }).join('')}
         </details>
         <p class="muted">Suggested order: paint land with the <b>Land</b> and <b>Ocean</b> brushes, add mountains, forests and towns, then finish with <b>Text</b>. Labels always sit on top of everything else.<br>To resize land: make <b>Land</b> the active layer, choose <b>Select</b>, click the land and drag its corners.</p>`;
       $('#pName').onchange = (e) => { doc.name = e.target.value || 'Untitled Map'; commit(); };
@@ -1818,6 +2228,15 @@
       // map look
       const lk = (id, key) => { $(id).oninput = (e) => { doc.look[key] = +e.target.value; needsDraw = true; }; $(id).onchange = () => commit(); };
       lk('#lkBright', 'bright'); lk('#lkContrast', 'contrast'); lk('#lkSat', 'sat'); lk('#lkHue', 'hue'); lk('#lkSepia', 'sepia'); lk('#lkVig', 'vignette');
+      $('#pKey').onclick = addLegend;
+      $('#ltOn').onchange = (e) => { doc.light.on = e.target.checked; commit(); needsDraw = true; };
+      $('#ltDark').oninput = (e) => { doc.light.dark = +e.target.value; needsDraw = true; }; $('#ltDark').onchange = () => commit();
+      $('#ltCol').oninput = (e) => { doc.light.color = e.target.value; needsDraw = true; }; $('#ltCol').onchange = () => commit();
+      el.querySelectorAll('[data-lfx]').forEach((n) => {
+        const [id, key] = n.dataset.lfx.split(':');
+        n.oninput = () => { const L = doc.layers[id]; L.fx = L.fx || {}; L.fx[key] = n.type === 'checkbox' ? n.checked : n.type === 'range' ? +n.value : n.value; needsDraw = true; };
+        n.onchange = () => { n.oninput(); markDirty(); };
+      });
       $('#lkReset').onclick = () => { doc.look = { bright: 100, contrast: 100, sat: 100, hue: 0, sepia: 0, vignette: 0 }; commit(); renderProps(); needsDraw = true; };
       bindCmdButtons(el);
       return;
@@ -1855,6 +2274,22 @@
       h += propRow('Spacing', `<input type="range" id="pSpacing" min="-2" max="40" value="${o.spacing}">`);
       h += propRow('Curve', `<input type="range" id="pCurve" min="-100" max="100" value="${o.curve}">`);
     }
+    if (o.t === 'legend') {
+      h += `<div class="row"><b style="flex:1">Map key</b></div>`;
+      h += propRow('Title', `<input type="text" id="pKTitle" value="${esc(o.title || 'Key')}">`);
+      h += propRow('Font', `<select id="pFont">${FONTS.map((f) => `<option ${f === (o.font || 'IM Fell English') ? 'selected' : ''}>${f}</option>`).join('')}</select>`);
+      h += `<div class="btnrow"><label class="chk"><input type="checkbox" id="pKRealms" ${o.realms !== false ? 'checked' : ''}> Realms</label><label class="chk" title="Every label with its grid square (turn the grid on for square references)"><input type="checkbox" id="pKPlaces" ${o.places ? 'checked' : ''}> Index of places</label></div>`;
+    }
+    if (o.t === 'asset') {
+      const lt = lightOf(o);
+      h += `<details class="fxbox" ${o.link ? 'open' : ''}><summary>Linked map</summary>
+        <p class="muted" style="margin:0 0 4px">${o.link ? `Opens <b>${esc(o.link.name)}</b> when you double-click this item.` : 'Link this item to another map, e.g. a town to its town map. Double-click the item to open it.'}</p>
+        <div class="btnrow"><button class="mini" id="pLink">${o.link ? 'Change…' : 'Choose map…'}</button>${o.link ? '<button class="mini" id="pLinkGo">Open</button><button class="mini" id="pUnlink">Remove link</button>' : ''}</div></details>`;
+      h += `<details class="fxbox" ${o.light ? 'open' : ''}><summary>Light</summary>
+        <label class="chk"><input type="checkbox" id="pLt" ${lt ? 'checked' : ''}> Gives off light${doc.light.on ? '' : ' <span class="muted">(turn Lighting on in the map settings)</span>'}</label>
+        ${propRow('Radius', `<input type="range" id="pLtR" min="40" max="1200" step="10" value="${Math.round(lt ? lt.r : 250)}">`)}
+        ${propRow('Colour', `<input type="color" id="pLtC" value="${lt ? lt.color : '#ffd27a'}">`)}</details>`;
+    }
     if (o.t === 'shape') {
       const opt = (obj, cur) => Object.entries(obj).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v}</option>`).join('');
       h += `<div class="row"><b style="flex:1">${SHAPE_KINDS[o.kind] || 'Shape'}</b></div>`;
@@ -1862,8 +2297,14 @@
       h += propRow('Wall', `<select id="pSWall">${opt(WALL_KINDS, o.wall)}</select>`);
       h += propRow('Wall width', `<input type="range" id="pSWW" min="2" max="40" value="${o.wallW}">`);
     }
-    if (o.t === 'line') {
-      h += propRow('Kind', `<select id="pLKind">${Object.entries(LINE_KINDS).map(([k, v]) => `<option value="${k}" ${k === o.kind ? 'selected' : ''}>${v}</option>`).join('')}</select>`);
+    if (isRealm(o)) {
+      h += `<div class="row"><b style="flex:1">Realm</b></div>`;
+      h += propRow('Name', `<input type="text" id="pRName" value="${esc(o.name || '')}">`);
+      h += propRow('Colour', `<input type="color" id="pRCol" value="${o.color || REALM_COLS[0]}"><input type="range" id="pRFill" min="0.05" max="0.8" step="0.05" value="${o.fill ?? 0.3}" title="Colour strength">`);
+      h += propRow('Border', `<input type="range" id="pLW" min="1" max="40" value="${o.w}">`);
+      h += `<label class="chk"><input type="checkbox" id="pRClip" ${o.clip !== false ? 'checked' : ''}> Only colour the land</label>`;
+    } else if (o.t === 'line') {
+      h += propRow('Kind', `<select id="pLKind">${Object.entries(LINE_KINDS).filter(([k]) => k !== 'realm').map(([k, v]) => `<option value="${k}" ${k === o.kind ? 'selected' : ''}>${v}</option>`).join('')}</select>`);
       h += propRow('Width', `<input type="range" id="pLW" min="1" max="40" value="${o.w}">`);
     } else {
       h += propRow('X / Y', `<input type="number" id="pX" value="${Math.round(o.x)}"><input type="number" id="pY" value="${Math.round(o.y)}">`);
@@ -1896,6 +2337,22 @@
     live('#pBold', 'bold'); live('#pItal', 'italic'); live('#pUpper', 'upper'); live('#pHalo', 'halo');
     live('#pSpacing', 'spacing', Number); live('#pCurve', 'curve', Number);
     live('#pLKind', 'kind'); live('#pLW', 'w', Number);
+    live('#pRCol', 'color'); live('#pRFill', 'fill', Number); live('#pRClip', 'clip');
+    if ($('#pRName')) { $('#pRName').oninput = (e) => { o.name = e.target.value; const t = o.labelId && findObj(o.labelId); if (t) t.text = e.target.value; needsDraw = true; }; $('#pRName').onchange = () => commit(); }
+    live('#pKTitle', 'title');
+    for (const [id, key] of [['#pKRealms', 'realms'], ['#pKPlaces', 'places']]) if ($(id)) $(id).onchange = (e) => {
+      // keep the key's edge nearest the map's edge where it is as the list grows or shrinks
+      const h0 = objSize(o).h; o[key] = e.target.checked; const h1 = objSize(o).h;
+      o.y += (o.y > doc.height / 2 ? -1 : 1) * (h1 - h0) / 2; commit(); needsDraw = true; refreshPropsValues();
+    };
+    if ($('#pLink')) {
+      $('#pLink').onclick = async () => { if (!api) { toast('Linking maps needs the desktop app.', 'warn'); return; } const r = await api.pickMap(filePath); if (r) { o.link = r; commit(); renderProps(); needsDraw = true; } };
+      $('#pLinkGo') && ($('#pLinkGo').onclick = () => openLinkedMap(o));
+      $('#pUnlink') && ($('#pUnlink').onclick = () => { delete o.link; commit(); renderProps(); needsDraw = true; });
+      const setLt = () => { if ($('#pLt').checked) o.light = { r: +$('#pLtR').value, color: $('#pLtC').value }; else o.light = false; needsDraw = true; };
+      $('#pLt').onchange = () => { setLt(); commit(); }; $('#pLtR').oninput = () => { $('#pLt').checked = true; setLt(); }; $('#pLtR').onchange = () => commit();
+      $('#pLtC').oninput = () => { $('#pLt').checked = true; setLt(); }; $('#pLtC').onchange = () => commit();
+    }
     const fx = (id, key, conv = (v) => v) => { const n = $(id); if (!n) return;
       n.oninput = (ev) => { o.ef = o.ef || {}; o.ef[key] = conv(ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value); needsDraw = true; };
       n.onchange = (ev) => { n.oninput(ev); commit(); }; };
@@ -1928,7 +2385,7 @@
     const el = $('#usedList');
     const groups = new Map();
     for (const o of doc.objects) {
-      const key = o.t === 'asset' ? `a:${o.a}` : o.t === 'text' ? 't:text' : o.t === 'shape' ? `s:${o.kind}` : `l:${o.kind}`;
+      const key = o.t === 'asset' ? `a:${o.a}` : o.t === 'text' ? 't:text' : o.t === 'shape' ? `s:${o.kind}` : o.t === 'legend' ? 'k:legend' : `l:${o.kind}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(o);
     }
@@ -1940,6 +2397,8 @@
       if (key.startsWith('a:')) { const k = key.slice(2); name = assetInfo(k)?.name || 'Missing asset'; thumb = `<img src="${esc(assetSrc(k) || '')}" alt="">`; }
       else if (key === 't:text') { name = 'Text labels'; thumb = '<span class="glyph" style="font-family:\'IM Fell English\'">A</span>'; }
       else if (key.startsWith('s:')) { name = SHAPE_KINDS[key.slice(2)] || 'Shape'; thumb = '<span class="glyph">▭</span>'; }
+      else if (key === 'k:legend') { name = 'Map key'; thumb = '<span class="glyph">☰</span>'; }
+      else if (key === 'l:realm') { name = 'Realms'; thumb = '<span class="glyph">⬢</span>'; }
       else { name = `${LINE_KINDS[key.slice(2)] || 'Line'}`; thumb = '<span class="glyph">〰</span>'; }
       const allSel = items.every((o) => selection.has(o.id));
       const open = openGroups.has(key);
@@ -1996,13 +2455,13 @@
         <h3>Map type</h3>
         <div class="cards">${Object.entries(MAP_TYPES).map(([k, v]) => `<div class="card ${k === type ? 'on' : ''}" data-type="${k}"><b>${v.label}</b><small>${v.desc}</small></div>`).join('')}</div>
         <h3>Style</h3>
-        <div class="cards">${Object.entries(window.ASSET_STYLES).map(([k, v]) => `<div class="card ${k === style ? 'on' : ''}" data-style="${k}"><b>${v.label}</b><small>${k === 'parchment' ? 'Tolkien-style sepia ink on parchment' : k === 'colour' ? 'Bold, saturated, game-ready' : 'Soft washes with bleeding edges'}</small></div>`).join('')}</div>
+        <div class="cards">${Object.entries(window.ASSET_STYLES).map(([k, v]) => `<div class="card ${k === style ? 'on' : ''}" data-style="${k}"><b>${v.label}</b><small>${STYLE_DESC[k] || ''}</small></div>`).join('')}</div>
         <h3>Size</h3>
         <div class="row"><label>Preset</label><select id="nPreset">${T.sizes.map(([w, h]) => `<option value="${w}x${h}">${w} × ${h}${type === 'battle' ? ` (${w / 70} × ${h / 70} squares)` : ''}</option>`).join('')}<option value="custom">Custom…</option></select></div>
         <div class="row"><label>Width × Height</label><input type="number" id="nW" value="${T.sizes[0][0]}" min="200" max="8000"> × <input type="number" id="nH" value="${T.sizes[0][1]}" min="200" max="8000"> px</div>
         <div class="row"><label>Name</label><input type="text" id="nName" value="${type === 'battle' ? 'Battle Map' : type === 'town' ? 'Town Map' : 'The Known World'}"></div>
         <p class="muted">Your map starts as open ocean. Use the <b>Land</b> brush to paint land in any shape, and the <b>Ocean</b> brush to carve it back into sea.</p>
-        <div class="actions">${first ? `<button class="linkbtn" data-cmd="guide">New here? Read the User Guide</button><button class="linkbtn" id="nExample" style="margin-right:auto">Explore an example map</button>${recovery ? `<button id="nRecover" title="Saved automatically ${esc(recovery.when)}">Recover unsaved map</button>` : ''}<button data-cmd="open">Open existing…</button>` : '<button id="nCancel">Cancel</button>'}<button class="primary" id="nCreate">Create map</button></div>`, (d) => {
+        <div class="actions">${first ? `<button class="linkbtn" data-cmd="guide">New here? Read the User Guide</button><button class="linkbtn" id="nExample" style="margin-right:auto">Explore an example map</button>${recovery ? `<button id="nRecover" title="Saved automatically ${esc(recovery.when)}">Recover unsaved map</button>` : ''}<button data-cmd="open">Open existing…</button>` : '<button id="nCancel">Cancel</button>'}<button id="nGen" title="Create the map, then roll a random world, town or dungeon on it">🎲 Random map…</button><button class="primary" id="nCreate">Create map</button></div>`, (d) => {
         d.querySelectorAll('[data-type]').forEach((c) => c.onclick = () => { type = c.dataset.type; render(); });
         d.querySelectorAll('[data-style]').forEach((c) => c.onclick = () => { style = c.dataset.style; d.querySelectorAll('[data-style]').forEach((x) => x.classList.toggle('on', x === c)); });
         d.querySelector('#nPreset').onchange = (e) => { if (e.target.value !== 'custom') { const [w, h] = e.target.value.split('x'); d.querySelector('#nW').value = w; d.querySelector('#nH').value = h; } };
@@ -2010,6 +2469,11 @@
         const ex = d.querySelector('#nExample'); if (ex) ex.onclick = () => { closeDialog(); newMap({ type: 'world', style, start: 'example', name: 'The Known World', seed: 7 }); };
         const rc = d.querySelector('#nRecover'); if (rc) rc.onclick = async () => { closeDialog(); try { await deserialize(recovery.data); markDirty(); toast('Recovered the map that was saved automatically. Save it to keep it.', 'ok'); } catch (err) { toast('Could not recover the autosaved map: ' + err.message, 'warn'); } };
         bindCmdButtons(d);
+        d.querySelector('#nGen').onclick = () => {
+          const w = clamp(+d.querySelector('#nW').value || 2000, 200, 8000), h = clamp(+d.querySelector('#nH').value || 1400, 200, 8000);
+          const name = d.querySelector('#nName').value;
+          closeDialog(); newMap({ type, style, width: w, height: h, name, start: 'sea' }); generateDialog();
+        };
         d.querySelector('#nCreate').onclick = () => {
           const w = clamp(+d.querySelector('#nW').value || 2000, 200, 8000), h = clamp(+d.querySelector('#nH').value || 1400, 200, 8000);
           const name = d.querySelector('#nName').value; // read before the dialog is cleared
@@ -2107,13 +2571,184 @@
     return { w: cv.width, h: cv.height, bytes: blob.size };
   }
 
+  // ---- SVG, PDF and print
+  function exportMoreDialog() {
+    openDialog(`<h2>More ways to export</h2>
+      <div class="cards">
+        <div class="card" data-x="svg"><b>SVG</b><small>Vector file: icons and labels stay sharp at any size and can be edited in Inkscape or Illustrator</small></div>
+        <div class="card" data-x="pdf"><b>PDF</b><small>Print-ready page: A4, A3, A2, Letter, Tabloid or poster size</small></div>
+        <div class="card" data-x="print"><b>Print</b><small>Send the map straight to a printer</small></div>
+      </div>
+      <div class="actions"><button id="xCancel">Cancel</button></div>`, (d) => {
+      d.querySelector('#xCancel').onclick = closeDialog;
+      d.querySelectorAll('[data-x]').forEach((c) => c.onclick = () => { const x = c.dataset.x; closeDialog(); if (x === 'svg') exportSvg(); else exportPdfDialog(x); });
+    });
+  }
+  const PAGES = { A4: [8.27, 11.69], A3: [11.69, 16.54], A2: [16.54, 23.39], A1: [23.39, 33.11], Letter: [8.5, 11], Tabloid: [11, 17] };
+  function exportPdfDialog(mode) {
+    if (!api) { toast('PDF export and printing need the desktop app. Export a PNG instead.', 'warn'); return; }
+    openDialog(`<h2>${mode === 'print' ? 'Print' : 'Export PDF'}</h2>
+      <div class="row"><label>Paper</label><select id="pPage">${Object.keys(PAGES).map((k) => `<option ${k === 'A4' ? 'selected' : ''}>${k}</option>`).join('')}<option value="map">Map size (poster, 150 dpi)</option></select></div>
+      <div class="row"><label>Orientation</label><select id="pOri"><option value="auto">To suit the map</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></div>
+      <div class="row"><label>Margin</label><select id="pMar"><option value="0">None</option><option value="0.25" selected>Narrow (6 mm)</option><option value="0.5">Wide (13 mm)</option></select></div>
+      <div class="row"><label>Include grid</label><input type="checkbox" id="pGrid" ${doc.grid.type !== 'none' ? 'checked' : ''}></div>
+      <p class="muted">The map is drawn at about 300 dots per inch for the page you choose.</p>
+      <div class="actions"><button id="pCancel">Cancel</button><button class="primary" id="pGo">${mode === 'print' ? 'Print…' : 'Export'}</button></div>`, (d) => {
+      d.querySelector('#pCancel').onclick = closeDialog;
+      d.querySelector('#pGo').onclick = async () => {
+        const pg = d.querySelector('#pPage').value, ori = d.querySelector('#pOri').value, m = +d.querySelector('#pMar').value, grid = d.querySelector('#pGrid').checked;
+        closeDialog(); await exportPage(mode, pg, ori, m, grid);
+      };
+    });
+  }
+  async function exportPage(mode, pg, ori, margin, grid) {
+    settleLand(); status(mode === 'print' ? 'Preparing to print…' : 'Rendering PDF…');
+    await new Promise((r) => setTimeout(r, 30));
+    let page;
+    if (pg === 'map') page = { w: doc.width / 150 + margin * 2, h: doc.height / 150 + margin * 2, margin };
+    else {
+      let [w, h] = PAGES[pg] || PAGES.A4; const land = ori === 'landscape' || (ori === 'auto' && doc.width > doc.height);
+      if (land) [w, h] = [h, w]; page = { w, h, margin };
+    }
+    const fit = Math.min((page.w - margin * 2) / doc.width, (page.h - margin * 2) / doc.height);   // inches per map px
+    const maxS = Math.sqrt(70e6 / (doc.width * doc.height));
+    const s = clamp(fit * 300, 0.25, maxS);
+    let cv = await renderExportCanvas(s, grid);
+    if (lookFilter() !== 'none') { const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height; const x2 = c2.getContext('2d'); x2.filter = lookFilter(); x2.drawImage(cv, 0, 0); cv = c2; }
+    const blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    if (mode === 'print') { const r = await api.printMap(bytes, page); status(r === 'printed' ? 'Sent to the printer.' : ''); return r; }
+    const p = await api.exportPdf(bytes, page, doc.name);
+    status(p ? `Exported PDF (${pg === 'map' ? 'poster' : pg}) to ${p}` : '');
+    return p;
+  }
+  // SVG: terrain, textures, rooms and lines as one picture; icons, grid, border and labels as real vectors
+  const FONT_FILES = { 'IM Fell English': ['im-fell-english-latin-400-normal.woff2'], 'IM Fell English SC': ['im-fell-english-sc-latin-400-normal.woff2'], 'Uncial Antiqua': ['uncial-antiqua-latin-400-normal.woff2'], Cinzel: ['cinzel-latin-400-normal.woff2', 'cinzel-latin-700-normal.woff2'], Macondo: ['macondo-latin-400-normal.woff2'], 'EB Garamond': ['eb-garamond-latin-400-normal.woff2', 'eb-garamond-latin-700-normal.woff2'], Caveat: ['caveat-latin-400-normal.woff2', 'caveat-latin-700-normal.woff2'], Orbitron: ['orbitron-latin-400-normal.woff2', 'orbitron-latin-700-normal.woff2'] };
+  async function buildSvg(opts = {}) {
+    await whenImagesReady(); await document.fonts.ready;
+    const W = doc.width, H = doc.height, s = opts.scale || 1, n = (v) => Math.round(v * 100) / 100, X = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const defs = [], body = [];
+    // 1. background picture: everything below the icons
+    const ts = Math.min(s, Math.sqrt(16e6 / (W * H)));
+    const bg = document.createElement('canvas'); bg.width = Math.round(W * s); bg.height = Math.round(H * s);
+    const bx = bg.getContext('2d'); bx.scale(s, s); bx.imageSmoothingQuality = 'high';
+    bx.drawImage(MT.renderBase(baseOpts(ts)), 0, 0, W, H);
+    if (Object.keys(texMasks).length && layerState('land').visible) bx.drawImage(renderTextures(Math.min(s, Math.sqrt(24e6 / (W * H)))), 0, 0, W, H);
+    const assetsOn = layerState('assets').visible, textOn = layerState('text').visible;
+    if (assetsOn) { drawDungeon(bx); for (const o of doc.objects) if (layerOf(o) === 'assets' && o.t !== 'asset') drawObject(bx, o); }
+    body.push(`<image x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none" href="${bg.toDataURL('image/png')}"/>`);
+    // 2. grid
+    const gr = doc.grid;
+    if (opts.grid !== false && gr.type !== 'none') {
+      let d = '';
+      if (gr.type === 'square') { for (let x = 0; x <= W + 0.1; x += gr.size) d += `M${n(x)} 0V${H}`; for (let y = 0; y <= H + 0.1; y += gr.size) d += `M0 ${n(y)}H${W}`; }
+      else { const r = gr.size / 2, hh = Math.sqrt(3) * r; for (let col = 0, x = r; x - r < W; col++, x += r * 1.5) for (let y = (col % 2 ? hh : hh / 2); y - hh / 2 < H; y += hh) { for (let i = 0; i < 6; i++) { const a = (Math.PI / 3) * i; d += `${i ? 'L' : 'M'}${n(x + r * Math.cos(a))} ${n(y + r * Math.sin(a))}`; } d += 'Z'; } }
+      body.push(`<path d="${d}" fill="none" stroke="${gr.color}" stroke-opacity="${gr.opacity}" stroke-width="1.5"/>`);
+    }
+    // 3. icons: each asset file embedded once, placed with <use>
+    let fxN = 0;
+    const fxFilterSvg = (e) => {
+      if (!e) return '';
+      const parts = []; let last = 'SourceGraphic';
+      if (e.hue) { parts.push(`<feColorMatrix in="${last}" type="hueRotate" values="${e.hue}" result="h"/>`); last = 'h'; }
+      if (e.sat != null && e.sat !== 100) { parts.push(`<feColorMatrix in="${last}" type="saturate" values="${e.sat / 100}" result="s"/>`); last = 's'; }
+      if (e.bright != null && e.bright !== 100) { const b = e.bright / 100; parts.push(`<feComponentTransfer in="${last}" result="b"><feFuncR type="linear" slope="${b}"/><feFuncG type="linear" slope="${b}"/><feFuncB type="linear" slope="${b}"/></feComponentTransfer>`); last = 'b'; }
+      const merge = [];
+      if (e.glow) { parts.push(`<feGaussianBlur in="${last}" stdDeviation="${(e.glowSize || 16) / 2}" result="gb"/><feFlood flood-color="${e.glowColor || '#ffd84a'}"/><feComposite in2="gb" operator="in" result="gl"/>`); merge.push('gl', 'gl'); }
+      if (e.shadow) { parts.push(`<feGaussianBlur in="SourceAlpha" stdDeviation="6" result="sb"/><feOffset in="sb" dx="8" dy="10" result="so"/><feFlood flood-color="#000" flood-opacity="${e.shadowStr ?? 0.5}"/><feComposite in2="so" operator="in" result="sh"/>`); merge.push('sh'); }
+      if (!parts.length) return '';
+      const id = `fx${++fxN}`;
+      defs.push(`<filter id="${id}" x="-50%" y="-50%" width="200%" height="200%">${parts.join('')}<feMerge>${merge.map((m) => `<feMergeNode in="${m}"/>`).join('')}<feMergeNode in="${last}"/></feMerge></filter>`);
+      return ` filter="url(#${id})"`;
+    };
+    if (assetsOn) {
+      const keys = [...new Set(doc.objects.filter((o) => o.t === 'asset' && !o.hidden && !o.a.startsWith('custom:')).map((o) => o.a))];
+      const files = api && api.readAssets ? await api.readAssets(doc.style, keys) : {};
+      const used = new Set(); const items = [];
+      for (const o of doc.objects) {
+        if (layerOf(o) !== 'assets' || o.hidden || o.t !== 'asset') continue;
+        const inf = assetInfo(o.a); if (!inf) continue;
+        const k = inf.base * o.s, e = o.ef;
+        const tr = `translate(${n(o.x)} ${n(o.y)}) rotate(${n(o.r || 0)}) scale(${n(o.fx ? -k : k)} ${n(k)})`;
+        let href;
+        if (e && e.tint && e.tintAmt > 0) href = tinted(o.a, getImg(o.a), e.tint, e.tintAmt).toDataURL('image/png');
+        else if (o.a.startsWith('custom:')) href = assetSrc(o.a);
+        else if (files[o.a]) { const id = `a-${o.a}`; if (!used.has(id)) { used.add(id); defs.push(`<image id="${id}" x="${-inf.w / 2}" y="${-inf.h / 2}" width="${inf.w}" height="${inf.h}" href="data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(files[o.a])))}"/>`); } items.push(`<use href="#${id}" transform="${tr}"${o.o != null && o.o < 1 ? ` opacity="${o.o}"` : ''}${fxFilterSvg(e)}/>`); continue; }
+        else { const c = document.createElement('canvas'); const im = getImg(o.a); c.width = im.naturalWidth || inf.w; c.height = im.naturalHeight || inf.h; c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); href = c.toDataURL('image/png'); }
+        items.push(`<image x="${-inf.w / 2}" y="${-inf.h / 2}" width="${inf.w}" height="${inf.h}" href="${href}" transform="${tr}"${o.o != null && o.o < 1 ? ` opacity="${o.o}"` : ''}${fxFilterSvg(e)}/>`);
+      }
+      const lf = layerFx('assets');
+      body.push(`<g id="assets"${lf && lf.opacity < 1 ? ` opacity="${lf.opacity}"` : ''}${lf ? fxFilterSvg({ shadow: lf.shadow, glow: lf.glow, glowColor: lf.glowColor }) : ''}>${items.join('')}</g>`);
+    }
+    // 4. lighting (a soft picture over the map)
+    if (doc.light && doc.light.on) {
+      const lc = document.createElement('canvas'); const ls = Math.min(1, 2000 / Math.max(W, H)); lc.width = Math.round(W * ls); lc.height = Math.round(H * ls);
+      const lx = lc.getContext('2d'); lx.scale(ls, ls); drawLighting(lx);
+      body.push(`<image x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none" href="${lc.toDataURL('image/png')}"/>`);
+    }
+    // 5. border
+    if (doc.border) {
+      const ink = INK[doc.style], m = Math.min(W, H), t = Math.max(6, m * 0.008), g = t * 1.6;
+      let b = `<rect x="${n(t / 2)}" y="${n(t / 2)}" width="${n(W - t)}" height="${n(H - t)}" fill="none" stroke="${ink}" stroke-width="${n(t)}"/><rect x="${n(t + g)}" y="${n(t + g)}" width="${n(W - 2 * (t + g))}" height="${n(H - 2 * (t + g))}" fill="none" stroke="${ink}" stroke-width="${n(t * 0.25)}"/>`;
+      if (doc.style === 'parchment') { let d = ''; const step = m / 24, a = t, bb = t + g; for (let x = bb + step; x < W - bb; x += step) d += `M${n(x)} ${n(a)}V${n(bb)}M${n(x)} ${n(H - a)}V${n(H - bb)}`; for (let y = bb + step; y < H - bb; y += step) d += `M${n(a)} ${n(y)}H${n(bb)}M${n(W - a)} ${n(y)}H${n(W - bb)}`; b += `<path d="${d}" stroke="${ink}" stroke-width="${n(t * 0.2)}" fill="none"/>`; }
+      body.push(`<g id="border">${b}</g>`);
+    }
+    // 6. labels as real text, with the fonts embedded
+    if (textOn) {
+      const fontsUsed = new Set(), items = [];
+      let arcN = 0;
+      for (const o of doc.objects) {
+        if (layerOf(o) !== 'text' || o.hidden) continue;
+        if (o.t === 'legend') { const c = document.createElement('canvas'); const { w, h } = objSize(o); const ks = 2; c.width = Math.ceil(w * ks) + 4; c.height = Math.ceil(h * ks) + 4; const x = c.getContext('2d'); x.scale(ks, ks); x.translate(w / 2 + 1, h / 2 + 1); drawLegend(x, { ...o, x: 0, y: 0, r: 0 }); items.push(`<image x="${-w / 2 - 1}" y="${-h / 2 - 1}" width="${c.width / ks}" height="${c.height / ks}" href="${c.toDataURL('image/png')}" transform="translate(${n(o.x)} ${n(o.y)}) rotate(${n(o.r || 0)})"/>`); continue; }
+        if (o.t !== 'text') continue;
+        fontsUsed.add(o.font);
+        const style = `font-family:'${o.font}';font-size:${o.size}px;${o.bold ? 'font-weight:700;' : ''}${o.italic ? 'font-style:italic;' : ''}${o.spacing ? `letter-spacing:${o.spacing}px;` : ''}`;
+        const halo = o.halo ? ` stroke="${o.haloColor || PAPER[doc.style]}" stroke-width="${n(o.size * 0.22)}" stroke-opacity="0.85" stroke-linejoin="round" paint-order="stroke"` : '';
+        const lines = textLines(o), tr = `translate(${n(o.x)} ${n(o.y)}) rotate(${n(o.r || 0)}) scale(${n(o.s)})`;
+        let inner;
+        if (o.curve) {
+          measureCtx.font = fontStr(o); measureCtx.letterSpacing = `${o.spacing || 0}px`;
+          const Wt = measureCtx.measureText(lines[0]).width, th = (Math.abs(o.curve) / 100) * Math.PI * 0.9, Rr = Wt / th, sign = o.curve > 0 ? 1 : -1, sag = Rr * (1 - Math.cos(th / 2));
+          const id = `arc${++arcN}`, y0 = sign * sag / 2, a0 = -Math.PI / 2 - Math.PI * 0.49, a1 = -Math.PI / 2 + Math.PI * 0.49;
+          const cy = y0 + sign * Rr;
+          const P = (a) => `${n(Rr * Math.cos(a))} ${n(cy + sign * Rr * Math.sin(a))}`;
+          defs.push(`<path id="${id}" d="M${P(a0)} A${n(Rr)} ${n(Rr)} 0 0 ${sign > 0 ? 1 : 0} ${P(a1)}"/>`);
+          inner = `<textPath href="#${id}" startOffset="50%">${X(lines[0])}</textPath>`;
+          items.push(`<text transform="${tr}" text-anchor="middle" dominant-baseline="central" fill="${o.color}" style="${style}"${o.o != null && o.o < 1 ? ` opacity="${o.o}"` : ''}${halo}${fxFilterSvg(o.ef && { shadow: o.ef.shadow, glow: o.ef.glow, glowColor: o.ef.glowColor })}>${inner}</text>`);
+          continue;
+        }
+        const lh = o.size * 1.15, y0 = -((lines.length - 1) * lh) / 2;
+        inner = lines.map((l, i) => `<tspan x="0" y="${n(y0 + i * lh)}">${X(l)}</tspan>`).join('');
+        items.push(`<text transform="${tr}" text-anchor="middle" dominant-baseline="central" fill="${o.color}" style="${style}"${o.o != null && o.o < 1 ? ` opacity="${o.o}"` : ''}${halo}${fxFilterSvg(o.ef && { shadow: o.ef.shadow, glow: o.ef.glow, glowColor: o.ef.glowColor })}>${inner}</text>`);
+      }
+      const faces = [];
+      if (api && api.readFont) for (const f of fontsUsed) for (const file of FONT_FILES[f] || []) { const b64 = await api.readFont(file); if (b64) faces.push(`@font-face{font-family:'${f}';font-weight:${file.includes('-700-') ? 700 : 400};src:url(data:font/woff2;base64,${b64}) format('woff2');}`); }
+      if (faces.length) defs.push(`<style>${faces.join('')}</style>`);
+      const lf = layerFx('text');
+      body.push(`<g id="labels"${lf && lf.opacity < 1 ? ` opacity="${lf.opacity}"` : ''}${lf ? fxFilterSvg({ shadow: lf.shadow, glow: lf.glow, glowColor: lf.glowColor }) : ''}>${items.join('')}</g>`);
+    }
+    // 7. vignette
+    const v = doc.look && doc.look.vignette;
+    if (v > 0) { defs.push(`<radialGradient id="vig" cx="50%" cy="50%" r="${n(Math.hypot(W, H) / 2 / Math.max(W, H) * 100)}%" gradientUnits="objectBoundingBox"><stop offset="${n((Math.min(W, H) * 0.3) / (Math.hypot(W, H) / 2))}" stop-color="rgb(40,24,10)" stop-opacity="0"/><stop offset="1" stop-color="rgb(40,24,10)" stop-opacity="${n((v / 100) * 0.85)}"/></radialGradient>`); body.push(`<rect width="${W}" height="${H}" fill="url(#vig)"/>`); }
+    const lf = lookFilter();
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">\n<title>${X(doc.name)}</title>\n<desc>Made with Pocket-Mapp-Creator</desc>\n<defs>${defs.join('\n')}</defs>\n<g${lf !== 'none' ? ` style="filter:${lf}"` : ''}>\n${body.join('\n')}\n</g>\n</svg>\n`;
+  }
+  async function exportSvg() {
+    settleLand(); status('Building SVG…'); await new Promise((r) => setTimeout(r, 30));
+    const svg = await buildSvg({ grid: doc.grid.type !== 'none' });
+    const bytes = new TextEncoder().encode(svg);
+    if (api) { const p = await api.exportImage(bytes, 'svg'); status(p ? `Exported SVG to ${p}` : ''); }
+    else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })); a.download = `${doc.name}.svg`; a.click(); }
+    return svg.length;
+  }
+
   function creditsDialog() {
     const counts = {}; MANIFEST.forEach((a) => (counts[a.genre] = (counts[a.genre] || 0) + 1));
     openDialog(`<h2>Licences</h2>
-      <p>Pocket-Mapp-Creator © 2026 project-tech-me — released under the MIT Licence.</p>
+      <p>Pocket-Mapp-Creator © 2026 Pocket-Designs — released under the MIT Licence.</p>
       <h3>Product icon</h3>
       <p><b>Icon Artist:</b> MJO-Art · workmjo@gmail.com<br>The product Icon files are custom images created by MJO-Art for this project. These icons can not be altered or used without the express permission of the Artist.</p>
-      <h3>Built-in map assets (${MANIFEST.length} × 3 styles)</h3>
+      <h3>Built-in map assets (${MANIFEST.length} × ${Object.keys(window.ASSET_STYLES).length} styles)</h3>
       <p>All built-in assets are <b>original artwork</b> drawn procedurally by Pocket-Mapp-Creator's own generator and dedicated to the public domain under <b>CC0 1.0</b>. You may use maps made with them commercially, with no attribution required.</p>
       <p class="muted">${Object.entries(counts).map(([g, n]) => `${g}: ${n}`).join(' · ')}</p>
       <h3>Fonts — SIL Open Font Licence 1.1</h3>
@@ -2124,7 +2759,7 @@
       <div class="actions"><button class="primary" id="cOk">Close</button></div>`, (d) => { d.querySelector('#cOk').onclick = closeDialog; });
   }
   function shortcutsDialog() {
-    const rows = [['F1', 'Open the User Guide'], ['V / S / B / E / G / X / P / L / U / T / H', 'Select · Stamp · Land · Ocean · Fill · Texture · Ground · Lines · Shapes · Text · Pan'], ['Enter / Backspace (Shapes)', 'Finish a polygon / remove its last corner'], ['Space + drag, middle mouse', 'Pan'], ['Mouse wheel', 'Zoom'], ['Ctrl+= / Ctrl+- / Ctrl+0', 'Zoom in / out / fit (or the − + buttons and % box at the top)'], ['G', 'Fill bucket'], ['Shift+wheel / Alt+wheel', 'Scroll sideways / up and down (or drag the scroll bars)'], ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / Cut / Paste (pastes at the mouse, same size and rotation)'], ['Ctrl+D', 'Duplicate'], ['Alt + drag', 'Duplicate while moving'], ['Delete', 'Delete selection'], ['R / Shift+R', 'Rotate ±15°'], ['F', 'Flip asset'], ['Click land (Select tool, Land layer)', 'Select a whole landmass to move, resize or rotate'], ['1 / 2 / 3', 'Make Land / Assets / Text the active layer'], ['[ / ]', 'Brush size, or scale selection'], ['Arrows (+Shift)', 'Nudge 1px (10px)'], ['Shift while rotating', 'Snap to 15°'], ['Alt while painting', 'Swap Land ↔ Ocean brush']];
+    const rows = [['F1', 'Open the User Guide'], ['V / S / B / E / G / X / P / L / U / D / T / M / H', 'Select · Stamp · Land · Ocean · Fill · Texture · Ground · Lines · Shapes · Dungeon · Text · Measure · Pan'], ['Ctrl+P', 'Print'], ['Double-click an item', 'Open its linked map'], ['Enter / Backspace (Shapes)', 'Finish a polygon / remove its last corner'], ['Space + drag, middle mouse', 'Pan'], ['Mouse wheel', 'Zoom'], ['Ctrl+= / Ctrl+- / Ctrl+0', 'Zoom in / out / fit (or the − + buttons and % box at the top)'], ['G', 'Fill bucket'], ['Shift+wheel / Alt+wheel', 'Scroll sideways / up and down (or drag the scroll bars)'], ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / Cut / Paste (pastes at the mouse, same size and rotation)'], ['Ctrl+D', 'Duplicate'], ['Alt + drag', 'Duplicate while moving'], ['Delete', 'Delete selection'], ['R / Shift+R', 'Rotate ±15°'], ['F', 'Flip asset'], ['Click land (Select tool, Land layer)', 'Select a whole landmass to move, resize or rotate'], ['1 / 2 / 3', 'Make Land / Assets / Text the active layer'], ['[ / ]', 'Brush size, or scale selection'], ['Arrows (+Shift)', 'Nudge 1px (10px)'], ['Shift while rotating', 'Snap to 15°'], ['Alt while painting', 'Swap Land ↔ Ocean brush']];
     openDialog(`<h2>Keyboard shortcuts</h2><table>${rows.map(([k, v]) => `<tr><td><kbd>${k}</kbd></td><td>${v}</td></tr>`).join('')}</table><div class="actions"><button class="primary" id="kOk">Close</button></div>`, (d) => { d.querySelector('#kOk').onclick = closeDialog; });
   }
 
@@ -2194,7 +2829,9 @@
     duplicate: duplicateSelection, selectAll: () => typingNow() ? api?.nativeEdit('selectAll') : selectAll(), resize: resizeDialog,
     zoomIn: () => zoomStep(1), zoomOut: () => zoomStep(-1), zoom100: () => setZoom(1),
     zoomFit, importAsset: importAssets, credits: creditsDialog, shortcuts: shortcutsDialog,
-    guide: () => openGuide()
+    guide: () => openGuide(),
+    generate: () => generateDialog(), back: goBack,
+    exportMore: () => exportMoreDialog(), exportSvg: () => exportSvg(), exportPdf: () => exportPdfDialog('pdf'), print: () => exportPdfDialog('print')
   };
   function openGuide(section) {
     if (api && api.openGuide) api.openGuide(section);
@@ -2250,6 +2887,342 @@
     clearTimeout(statusTimer); if (msg) statusTimer = setTimeout(() => { el.dataset.msg = ''; }, 5000);
   }
 
+  // ------------------------------------------------------------------ map key, linked maps
+  function addLegend() {
+    if (layerBlocked('text')) { status(layerBlocked('text')); return; }
+    const k = Math.min(doc.width, doc.height) / 1400, hasRealms = doc.objects.some(isRealm);
+    const o = { id: uid(), t: 'legend', x: 0, y: 0, s: 1, r: 0, o: 1, title: 'Key', size: Math.round(26 * k), realms: true, places: !hasRealms, font: 'IM Fell English' };
+    const L = legendLayout(o), m = 70 * k;
+    // put the key in the emptiest corner (fewest items, least land)
+    let best = null;
+    for (const [cx, cy] of [[m + L.w / 2, doc.height - m - L.h / 2], [doc.width - m - L.w / 2, doc.height - m - L.h / 2], [m + L.w / 2, m + L.h / 2], [doc.width - m - L.w / 2, m + L.h / 2]]) {
+      let score = 0;
+      for (const q of doc.objects) { if (q.t === 'line' || q.hidden) continue; const qs = objSize(q); if (Math.abs(q.x - cx) < (L.w + qs.w) / 2 && Math.abs(q.y - cy) < (L.h + qs.h) / 2) score += q.t === 'text' ? 6 : 3; }
+      for (let i = 0; i < 25; i++) if (landAt(cx + ((i % 5) / 4 - 0.5) * L.w, cy + (Math.floor(i / 5) / 4 - 0.5) * L.h)) score += 0.4;
+      if (!best || score < best.score) best = { score, cx, cy };
+    }
+    o.x = best.cx; o.y = best.cy;
+    doc.objects.push(o); setActiveLayer('text', true); selection.clear(); selection.add(o.id); commit(); refreshPanels(); needsDraw = true;
+    status('Map key added. Drag it into place; choose what it lists in Properties.');
+  }
+  async function leaveMapOk() {
+    if (!dirtyFlag) return true;
+    if (filePath && api) { await save(false); return !dirtyFlag; }
+    return confirmBox('Leave this map without saving?', 'This map has never been saved, so its changes will be lost. Cancel, then Save, to keep them.');
+  }
+  async function openLinkedMap(o) {
+    if (!api) { toast('Linked maps open in the desktop app.', 'warn'); return; }
+    const r = await api.readMap(o.link, filePath);
+    if (!r) { toast(`Can't find the linked map “${o.link.name}”. It may have been moved or renamed: choose it again in Properties → Linked map.`, 'warn'); return; }
+    if (!(await leaveMapOk())) return;
+    const here = { path: filePath, name: doc.name };
+    try { await deserialize(r.data); filePath = r.filePath; document.title = `Pocket-Mapp-Creator — ${doc.name}`; if (here.path) mapStack.push(here); updateBackBtn(); toast(`Opened ${doc.name}`); }
+    catch (err) { toast('Could not open the linked map: ' + err.message, 'warn'); }
+  }
+  async function goBack() {
+    const prev = mapStack[mapStack.length - 1]; if (!prev || !api) return;
+    const r = await api.readMap({ path: prev.path }, null);
+    if (!r) { mapStack.pop(); updateBackBtn(); toast('That map is no longer where it was.', 'warn'); return; }
+    if (!(await leaveMapOk())) return;
+    mapStack.pop(); await deserialize(r.data); filePath = r.filePath; document.title = `Pocket-Mapp-Creator — ${doc.name}`; updateBackBtn();
+  }
+  function updateBackBtn() {
+    const b = $('#backBtn'); if (!b) return; const prev = mapStack[mapStack.length - 1];
+    b.classList.toggle('hidden', !prev); if (prev) { b.textContent = `◀ ${prev.name}`; b.title = `Back to ${prev.name}`; }
+  }
+
+  // ------------------------------------------------------------------ random maps (worlds, towns, dungeons)
+  function clearForGenerate() {
+    settleLand(); selection.clear(); measure = null;
+    doc.objects = []; doc.dungeon = null; texMasks = {}; lastTexSnap = {};
+    fillMask(pathMask, false); doc.light.on = false;
+  }
+  function coastGrid(g) {
+    // land / sea on a coarse grid plus each land square's distance from the sea (in squares)
+    const G = landGrid(g), water = new Uint8Array(G.land.length);
+    for (let i = 0; i < water.length; i++) water[i] = G.land[i] ? 0 : 1;
+    G.dist = water.some((v) => v) ? MT.distance(water, G.gw, G.gh) : new Float32Array(water.length).fill(999);
+    G.g = g; return G;
+  }
+  function generateWorld(o) {
+    const R = MT.rng(o.seed), N = MT.nameGen(MT.rng(o.seed + 11));
+    clearForGenerate(); doc.seed = o.seed;
+    const shapes = { continent: { scale: 3.2, fall: 0.55 }, islands: { scale: 5.5, fall: 0.35 }, archipelago: { scale: 9, fall: 0.12 } };
+    MT.generateLand(landMask, o.seed, o.land, shapes[o.shape] || shapes.continent);
+    rebuildBase(true);
+    const W = doc.width, H = doc.height, k = Math.min(W, H) / 1400;
+    const G = coastGrid(Math.max(8, Math.max(W, H) / 260)), g = G.g;
+    const at = (x, y) => { const gx = Math.floor(x / g), gy = Math.floor(y / g); return gx >= 0 && gy >= 0 && gx < G.gw && gy < G.gh ? G.dist[gy * G.gw + gx] * (G.land[gy * G.gw + gx] ? 1 : 0) : 0; };
+    const pick = (n, test, tries = 80) => { const out = []; let t = 0; while (out.length < n && t++ < n * tries) { const x = W * (0.05 + R() * 0.9), y = H * (0.07 + R() * 0.86); if (test(x, y)) out.push([x, y]); } return out; };
+    const landArea = G.land.reduce((a, v) => a + v, 0) / G.land.length;
+    const inland = (d) => (x, y) => at(x, y) * g > d * k;
+    const labels = [];
+    // mountain ranges
+    const peaks = [];
+    if (o.mountains) {
+      const ranges = Math.max(1, Math.round(landArea * 8 * (W * H) / (3000 * 2000)));
+      for (let c = 0; c < ranges; c++) {
+        const st = pick(1, inland(150))[0]; if (!st) break;
+        let [x, y] = st, ang = R() * Math.PI * 2;
+        const len = 6 + Math.floor(R() * 8);
+        for (let i = 0; i < len; i++) {
+          if (at(x, y) * g > 50 * k) { addAsset(R() < 0.25 ? 'mountain-snow' : R() < 0.5 ? 'mountain-tall' : 'mountain', x, y, { s: (0.8 + R() * 0.4) * k * 1.1, fx: R() < 0.3 }); peaks.push([x, y]); }
+          ang += (R() - 0.5) * 0.7; x += Math.cos(ang) * 68 * k; y += Math.sin(ang) * 38 * k;
+        }
+        if (c === 0 && peaks.length > 3) labels.push(() => { const p = peaks[Math.floor(peaks.length / 2)]; addText(p[0], p[1] + 90 * k, { text: N.mountains(), size: Math.round(24 * k), italic: true, spacing: 5, noIndex: true, o: 0.9 }); });
+      }
+      pick(Math.round(landArea * 22), inland(50)).forEach(([x, y]) => addAsset(R() < 0.7 ? 'hill' : 'hills', x, y, { s: 0.7 * k }));
+      if (R() < 0.5) { const v = pick(1, inland(120))[0]; if (v) addAsset('volcano', v[0], v[1], { s: 0.9 * k }); }
+    }
+    // forests
+    if (o.forests) {
+      const groves = pick(Math.max(2, Math.round(landArea * 14)), inland(110));
+      groves.forEach(([fx, fy], gi) => {
+        const pine = R() < 0.5;
+        for (let i = 0; i < 18; i++) { const x = fx + (R() - 0.5) * 240 * k, y = fy + (R() - 0.5) * 130 * k; if (at(x, y) * g > 20 * k && !peaks.some(([px, py]) => Math.hypot(px - x, py - y) < 50 * k)) addAsset(pine ? (R() < 0.85 ? 'pine' : 'tree') : (R() < 0.85 ? 'tree' : 'pine'), x, y, { s: (0.35 + R() * 0.15) * k, fx: R() < 0.5 }); }
+        if (gi < 2) labels.push(() => addText(fx, fy + 85 * k, { text: N.forest(), size: Math.round(20 * k), italic: true, spacing: 3, noIndex: true, o: 0.9 }));
+      });
+    }
+    // rivers: from the mountains down to the nearest coast
+    if (o.rivers) {
+      const nr = Math.max(1, Math.round(landArea * 6));
+      const sources = (peaks.length ? peaks.slice() : pick(nr, inland(200))).sort(() => R() - 0.5).slice(0, nr);
+      for (const [sx, sy] of sources) {
+        let gx = Math.floor(sx / g), gy = Math.floor(sy / g); const pts = [[sx + 20 * k, sy + 30 * k]];
+        for (let step = 0; step < 600; step++) {
+          const here = G.dist[gy * G.gw + gx]; if (!G.land[gy * G.gw + gx]) break;
+          let best = null;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+            const nx = gx + dx, ny = gy + dy; if (nx < 0 || ny < 0 || nx >= G.gw || ny >= G.gh) continue;
+            const v = (G.land[ny * G.gw + nx] ? G.dist[ny * G.gw + nx] : -1) + R() * 0.9;
+            if (!best || v < best.v) best = { v, nx, ny };
+          }
+          if (!best || best.v > here + 0.6) break;
+          gx = best.nx; gy = best.ny; pts.push([(gx + 0.5) * g, (gy + 0.5) * g]);
+        }
+        if (pts.length > 6) insertLow({ id: uid(), t: 'line', kind: 'river', w: Math.round(9 * k * 10) / 10 + 2, o: 1, pts: MT.smoothLine(simplify(pts, g * 0.8), 2) });
+      }
+    }
+    // towns, cities and the roads between them
+    const towns = [];
+    if (o.towns) {
+      const nt = Math.max(3, Math.round(landArea * 16 * Math.sqrt((W * H) / (3000 * 2000))));
+      const spots = pick(nt * 3, (x, y) => at(x, y) * g > 30 * k && !peaks.some(([px, py]) => Math.hypot(px - x, py - y) < 70 * k));
+      for (const [x, y] of spots) { if (towns.length >= nt) break; if (towns.some((t) => Math.hypot(t.x - x, t.y - y) < 230 * k)) continue; towns.push({ x, y, name: N.town() }); }
+      towns.forEach((t, i) => {
+        const kind = i === 0 ? 'city' : i < 3 ? 'castle' : at(t.x, t.y) * g < 60 * k && R() < 0.6 ? 'harbour' : R() < 0.15 ? 'tower' : 'village';
+        t.kind = kind; addAsset(kind, t.x, t.y, { s: (i < 3 ? 0.62 : 0.5) * k });
+        labels.push(() => addText(t.x, t.y + 64 * k, { text: t.name, size: Math.round((i === 0 ? 34 : 28) * k), font: 'IM Fell English', bold: i === 0 }));
+      });
+      if (o.roads && towns.length > 1) {
+        const grid = landGrid(Math.max(6, Math.max(W, H) / 320));
+        const done = new Set([0]);
+        while (done.size < towns.length) {
+          let best = null;
+          for (const i of done) for (let j = 0; j < towns.length; j++) if (!done.has(j)) { const d = Math.hypot(towns[i].x - towns[j].x, towns[i].y - towns[j].y); if (!best || d < best.d) best = { i, j, d }; }
+          done.add(best.j);
+          if (best.d > Math.max(W, H) * 0.45) continue;
+          const pts = routeRoad([towns[best.i].x, towns[best.i].y], [towns[best.j].x, towns[best.j].y], { grid });
+          if (pts && pts.length > 1) insertLow({ id: uid(), t: 'line', kind: 'road', w: Math.max(2, Math.round(4 * k)), o: 0.9, pts });
+        }
+      }
+    }
+    // realms: the land is shared out between rival capitals
+    if (o.realms > 0) {
+      const caps = (towns.length >= o.realms ? towns.slice(0, o.realms).map((t) => [t.x, t.y]) : pick(o.realms, inland(80)));
+      if (caps.length > 1) {
+        const cells = MT.voronoiCells(caps, W, H, o.seed, 0.1);
+        towns.forEach((t) => addText(t.x, t.y + 64 * k, { text: '', size: 28 * k, _tmp: true }));   // stand-ins so realm names keep clear of town names
+        cells.forEach((pts) => finishRealm({ id: uid(), t: 'line', kind: 'realm', w: Math.max(3, Math.round(6 * k)), o: 1, pts }, { name: N.realm(), label: true, quiet: true, size: 44 * k, clear: 80 * k }));
+        doc.objects = doc.objects.filter((q) => !q._tmp);
+      }
+    }
+    // the sea
+    if (o.sea) {
+      const sea = pick(4, (x, y) => !landAt(x, y) && !landAt(x + 90 * k, y) && !landAt(x - 90 * k, y) && !landAt(x, y + 60 * k) && !landAt(x, y - 60 * k), 200);
+      if (sea[0]) addAsset(R() < 0.5 ? 'galleon' : 'ship', sea[0][0], sea[0][1], { s: 0.6 * k });
+      if (sea[1]) addAsset(R() < 0.5 ? 'sea-serpent' : 'whirlpool', sea[1][0], sea[1][1], { s: 0.7 * k });
+      const seaLab = pick(1, (x, y) => x > W * 0.2 && x < W * 0.8 && y > H * 0.15 && y < H * 0.88 && [-1, -0.5, 0, 0.5, 1].every((t) => !landAt(x + t * 260 * k, y) && !landAt(x + t * 260 * k, y - 40 * k) && !landAt(x + t * 260 * k, y + 40 * k)), 300)[0];
+      if (seaLab) sea[2] = seaLab; else sea[2] = null;
+      if (sea[2]) labels.push(() => addText(sea[2][0], sea[2][1], { text: N.sea(), size: Math.round(42 * k), italic: true, spacing: 8, curve: 14, noIndex: true }));
+      if (sea[3] && R() < 0.6) addAsset('longship', sea[3][0], sea[3][1], { s: 0.5 * k });
+    }
+    if (o.title) {
+      addAsset('compass', W - 170 * k, H - 190 * k, { s: 1.1 * k });
+      addAsset('cartouche', W / 2, 115 * k, { s: 2.6 * k });
+      labels.push(() => addText(W / 2, 115 * k, { text: doc.name, size: Math.round(52 * k), font: 'IM Fell English SC', spacing: 4, halo: false, noIndex: true }));
+    }
+    labels.forEach((f) => f());
+    if (o.key) addLegend();
+  }
+  function generateTown(o) {
+    const R = MT.rng(o.seed), N = MT.nameGen(MT.rng(o.seed + 5));
+    clearForGenerate(); doc.seed = o.seed;
+    fillMask(landMask, true);
+    const W = doc.width, H = doc.height, unit = Math.min(W, H), top = doc.type === 'battle';
+    const title = { x: W / 2, y: unit * 0.07, w: unit * 0.5, h: unit * 0.1 };
+    const T = MT.townLayout(W, H, { size: o.size, topdown: top, reserve: [title] }, R);
+    // the river runs across the map but well clear of the market square
+    let river = null;
+    if (o.river) {
+      const [cx, cy] = T.centre, side = R() < 0.5 ? -1 : 1, off = T.square.r + unit * 0.13;
+      const yc = clamp(cy + side * off, H * 0.12, H * 0.9), tilt = (R() - 0.5) * H * 0.35, pts = [];
+      for (let k = 0; k <= 14; k++) { const t = k / 14; pts.push([-40 + (W + 80) * t, yc + tilt * (t - cx / W) + Math.sin(t * 7 + o.seed) * H * 0.035]); }
+      river = { id: uid(), t: 'line', kind: 'river', w: unit * 0.04, o: 1, pts: MT.smoothLine(pts, 2) };
+    }
+    const nearRiver = (x, y, pad) => river && river.pts.some(([px, py]) => Math.hypot(px - x, py - y) < river.w / 2 + pad);
+    // streets and the market square, painted as ground
+    const pc = pathMask.getContext('2d'); pc.save(); pc.scale(maskScale, maskScale); pc.strokeStyle = pc.fillStyle = '#fff'; pc.lineCap = pc.lineJoin = 'round';
+    for (const st of T.streets) { pc.lineWidth = st.w; pc.beginPath(); st.pts.forEach(([x, y], k) => (k ? pc.lineTo(x, y) : pc.moveTo(x, y))); pc.stroke(); }
+    pc.beginPath(); pc.arc(T.square.x, T.square.y, T.square.r, 0, 7); pc.fill(); pc.restore();
+    if (top) { const m = texMask('grass', true).getContext('2d'); m.fillStyle = 'rgba(255,255,255,.55)'; m.fillRect(0, 0, m.canvas.width, m.canvas.height); }
+    if (river) insertLow(river);
+    // buildings: sized from each picture's own width so they fill their lot
+    const place = (a, x, y, size, r = 0, flip = false) => { const inf = assetInfo(a); if (!inf) return null; return addAsset(a, x, y, { s: size / (inf.w * inf.base), r, fx: flip }); };
+    const special = top ? ['round-tower-top', o.size === 'town' || o.size === 'city' ? 'city-block-top' : 'house-top'] : ['tavern', 'chapel', 'blacksmith', 'market-stall', 'market-stall', 'tavern'];
+    const common = top ? ['house-top'] : (o.eastern ? ['eastern-house', 'house', 'eastern-house', 'cottage'] : ['house', 'cottage', 'house', 'row-houses', 'cottage']);
+    let n = 0;
+    T.lots.forEach((L) => {
+      if (nearRiver(L.x, L.y, T.bsize * 0.75)) return;
+      let a = n < special.length && R() < 0.9 ? special[n] : common[Math.floor(R() * common.length)];
+      if (!top && o.size === 'city' && n === special.length) a = 'castle-keep';
+      if (o.eastern && !top && n === 1) a = 'pagoda';
+      const size = T.bsize * (a === 'city-block-top' ? 1.7 : a === 'row-houses' || a === 'castle-keep' ? 1.5 : a === 'market-stall' ? 0.8 : 1.05) * (0.92 + R() * 0.16);
+      place(a, L.x, L.y, size, top ? Math.round(((L.angle * 180) / Math.PI + 360) % 180) : 0, !top && R() < 0.5);
+      n++;
+    });
+    place(o.size === 'hamlet' || top ? 'well' : 'fountain', T.square.x, T.square.y, T.bsize * 0.8);
+    if (o.eastern && !top) place('torii-gate', T.square.x, T.square.y - T.square.r * 0.95, T.bsize);
+    // bridges wherever a street crosses the river
+    if (river) for (const st of T.streets) {
+      for (let k = 1; k < st.pts.length; k++) {
+        const [ax, ay] = st.pts[k - 1], [bx, by] = st.pts[k];
+        for (let q = 1; q < river.pts.length; q++) {   // where the street segment actually crosses the river
+          const [cx2, cy2] = river.pts[q - 1], [dx2, dy2] = river.pts[q];
+          const den = (bx - ax) * (dy2 - cy2) - (by - ay) * (dx2 - cx2); if (Math.abs(den) < 1e-9) continue;
+          const t = ((cx2 - ax) * (dy2 - cy2) - (cy2 - ay) * (dx2 - cx2)) / den, u = ((cx2 - ax) * (by - ay) - (cy2 - ay) * (bx - ax)) / den;
+          if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+          const x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
+          if (x > 0 && x < W && y > 0 && y < H) place('stone-bridge-top', x, y, river.w * 2.6, Math.round((Math.atan2(by - ay, bx - ax) * 180) / Math.PI));
+        }
+      }
+    }
+    // trees round the edge of the settlement
+    const busy = (x, y) => nearRiver(x, y, T.bsize * 0.4) || doc.objects.some((q) => q.t === 'asset' && Math.hypot(q.x - x, q.y - y) < T.bsize * 0.9) || T.streets.some((st) => st.pts.some(([px, py]) => Math.hypot(px - x, py - y) < st.w)) || (Math.abs(x - title.x) < title.w / 2 && Math.abs(y - title.y) < title.h / 2);
+    for (let k = 0, m = 0; k < 500 && m < (top ? 40 : 28); k++) { const x = R() * W, y = R() * H; if (Math.hypot(x - T.centre[0], y - T.centre[1]) < unit * 0.16 || busy(x, y)) continue; place(top ? 'tree-top' : 'tree-34', x, y, T.bsize * (0.7 + R() * 0.5), top ? Math.round(R() * 360) : 0, R() < 0.5); m++; }
+    if (!top && o.size !== 'hamlet') for (let k = 0; k < 30; k++) { const a = R() * 6.283, x = T.centre[0] + Math.cos(a) * unit * 0.36, y = T.centre[1] + Math.sin(a) * unit * 0.3; if (x > 60 && y > 60 && x < W - 60 && y < H - 60 && !busy(x, y)) { place('windmill', x, y, T.bsize * 1.1); break; } }
+    // town wall with a gatehouse wherever a street leaves the town
+    if (o.walls && T.lots.length) {
+      const rx = Math.min(W * 0.46, Math.max(...T.lots.map((L) => Math.abs(L.x - T.centre[0]))) + T.bsize * 0.9), ry = Math.min(H * 0.46, Math.max(...T.lots.map((L) => Math.abs(L.y - T.centre[1]))) + T.bsize * 0.9);
+      const ring = []; for (let k = 0; k <= 48; k++) { const a = (k / 48) * Math.PI * 2; ring.push([T.centre[0] + Math.cos(a) * rx, T.centre[1] + Math.sin(a) * ry]); }
+      insertLow({ id: uid(), t: 'line', kind: 'wall', w: unit * 0.012, o: 1, pts: ring });
+      const outside = ([x, y]) => ((x - T.centre[0]) / rx) ** 2 + ((y - T.centre[1]) / ry) ** 2 >= 1;
+      for (const st of T.streets) for (let k = 1; k < st.pts.length; k++) {
+        if (outside(st.pts[k - 1]) === outside(st.pts[k])) continue;
+        const [ax, ay] = st.pts[k - 1], [bx, by] = st.pts[k];
+        place(top ? 'round-tower-top' : 'gatehouse', (ax + bx) / 2, (ay + by) / 2, T.bsize * 1.2);
+      }
+    }
+    const name = o.name || N.town();
+    doc.name = name;
+    addText(title.x, title.y, { text: name, size: Math.round(unit * 0.05), font: 'IM Fell English SC', spacing: 6, noIndex: true });
+  }
+  function generateDungeon(o) {
+    const R = MT.rng(o.seed);
+    if (o.replace) clearForGenerate();
+    doc.seed = o.seed;
+    const z = doc.grid.type === 'square' ? doc.grid.size : 70;
+    if (doc.grid.type === 'none') doc.grid.type = 'square';
+    fillMask(landMask, true);
+    if (o.rock) { const m = texMask('rock', true).getContext('2d'); m.fillStyle = '#fff'; m.fillRect(0, 0, m.canvas.width, m.canvas.height); }
+    const cols = Math.floor(doc.width / z), rows = Math.floor(doc.height / z);
+    const sizes = { small: [3, 5], medium: [3, 7], large: [5, 10] }[o.roomSize] || [3, 7];
+    const L = MT.dungeonLayout(cols, rows, { rooms: o.rooms, minSize: sizes[0], maxSize: sizes[1], corridor: o.corridor, loops: Math.round(o.rooms / 4) }, R);
+    if (!L.rooms.length) { toast('The map is too small for that dungeon. Make the map bigger or the rooms smaller.', 'warn'); return; }
+    const D = dungeonData(); D.size = z; D.cells = L.cells; D.v = (D.v || 0) + 1; D.fill = o.floor || 'stone'; D.wall = o.wall || 'stone'; D.wallW = Math.max(6, Math.round(z * 0.17));
+    const sc = z / 70, busy = new Set();
+    const centreOf = (c) => [(c[0] + 0.5) * z, (c[1] + 0.5) * z];
+    if (o.doors) for (const d of L.doors) {
+      const roll = R(); if (roll < 0.22) continue;
+      const kind = roll > 0.92 ? 'secret-door' : 'door';
+      addAsset(kind, d.x * z, d.y * z, { s: sc * 0.95, r: d.vertical ? 90 : 0 });
+      busy.add(`${d.inside[0]},${d.inside[1]}`);
+    }
+    if (o.furnish) {
+      const FURN = ['barrel', 'crate', 'chest', 'table', 'bed', 'bones', 'rubble', 'statue', 'pillar', 'spike-pit', 'cauldron', 'sarcophagus', 'weapon-rack', 'bookshelf', 'cobweb'];
+      L.rooms.forEach((rm, i) => {
+        const inside = []; for (let y = rm.y + 1; y < rm.y + rm.h - 1; y++) for (let x = rm.x + 1; x < rm.x + rm.w - 1; x++) if (L.roomOf.get(`${x},${y}`) === i && !busy.has(`${x},${y}`)) inside.push([x, y]);
+        const take = () => { if (!inside.length) return null; const c = inside.splice(Math.floor(R() * inside.length), 1)[0]; busy.add(`${c[0]},${c[1]}`); return c; };
+        const special = i === 0 ? 'stairs' : i === L.rooms.length - 1 ? (R() < 0.5 ? 'treasure-pile' : 'altar') : null;
+        if (special) { const c = take(); if (c) addAsset(special, ...centreOf(c), { s: sc * 0.95 }); }
+        const n = 1 + Math.floor(R() * Math.min(4, inside.length / 3));
+        for (let j = 0; j < n; j++) { const c = take(); if (c) addAsset(FURN[Math.floor(R() * FURN.length)], ...centreOf(c), { s: sc * (0.8 + R() * 0.15), r: Math.floor(R() * 4) * 90 }); }
+        // a torch on the north wall of most rooms
+        if (R() < 0.7) { const tx = rm.x + Math.floor(rm.w / 2); if (L.roomOf.get(`${tx},${rm.y}`) === i) addAsset('wall-torch', (tx + 0.5) * z, rm.y * z + z * 0.32, { s: sc * 0.75 }); }
+      });
+    }
+    if (o.numbers) L.rooms.forEach((rm, i) => {
+      let c = [Math.floor(rm.x + rm.w / 2), Math.floor(rm.y + rm.h / 2)];
+      for (let y = rm.y; busy.has(`${c[0]},${c[1]}`) && y < rm.y + rm.h; y++) for (let x = rm.x; x < rm.x + rm.w; x++) if (L.roomOf.get(`${x},${y}`) === i && !busy.has(`${x},${y}`)) { c = [x, y]; break; }
+      busy.add(`${c[0]},${c[1]}`);
+      addText((c[0] + 0.5) * z, (c[1] + 0.5) * z, { text: String(i + 1), size: Math.round(z * 0.42), font: 'Cinzel', bold: true, halo: true, color: INK[doc.style], noIndex: true });
+    });
+    if (o.dark) { doc.light.on = true; doc.light.dark = 0.72; }
+  }
+  function generateDialog(kind) {
+    let tab = kind || (doc.type === 'battle' ? 'dungeon' : doc.type === 'town' ? 'town' : 'world');
+    const seed = () => Math.floor(Math.random() * 1e6);
+    const render = () => {
+      openDialog(`<h2>Generate a random map</h2>
+        <div class="seg" style="margin-bottom:10px">${[['world', 'World'], ['town', 'Town'], ['dungeon', 'Dungeon']].map(([k, v]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${v}</button>`).join('')}</div>
+        ${tab === 'world' ? `
+          <div class="row"><label>Land</label><select id="gShape"><option value="continent">One big continent</option><option value="islands">A few large islands</option><option value="archipelago">Many small islands</option></select></div>
+          <div class="row"><label>Amount of land</label><input type="range" id="gLand" min="0.2" max="0.65" step="0.01" value="0.42"></div>
+          <div class="row"><label>Realms</label><input type="number" id="gRealms" min="0" max="10" value="4" style="width:70px"> <span class="muted">0 for none</span></div>
+          <div class="btnrow"><label class="chk"><input type="checkbox" id="gMount" checked> Mountains</label><label class="chk"><input type="checkbox" id="gForest" checked> Forests</label><label class="chk"><input type="checkbox" id="gRivers" checked> Rivers</label><label class="chk"><input type="checkbox" id="gTowns" checked> Towns &amp; names</label><label class="chk"><input type="checkbox" id="gRoads" checked> Roads</label><label class="chk"><input type="checkbox" id="gSea" checked> Ships &amp; sea names</label><label class="chk"><input type="checkbox" id="gTitle" checked> Title &amp; compass</label><label class="chk"><input type="checkbox" id="gKey" checked> Map key</label></div>`
+        : tab === 'town' ? `
+          <div class="row"><label>Size</label><select id="gSize"><option value="hamlet">Hamlet</option><option value="village" selected>Village</option><option value="town">Town</option><option value="city">City</option></select></div>
+          <div class="row"><label>Name</label><input type="text" id="gName" placeholder="Leave empty for a random name"></div>
+          <div class="btnrow"><label class="chk"><input type="checkbox" id="gWalls"> Town walls</label><label class="chk"><input type="checkbox" id="gRiver" checked> River</label><label class="chk"><input type="checkbox" id="gEast"> Eastern style (pagoda, shrine gate)</label></div>
+          <p class="muted">${doc.type === 'battle' ? 'This is a battle map, so buildings are drawn from above.' : 'Buildings are drawn in 3/4 view. On a Battle Map they are drawn from above.'}</p>`
+        : `
+          <div class="row"><label>Rooms</label><input type="range" id="gRooms" min="3" max="24" value="9"> <span id="gRoomsV">9</span></div>
+          <div class="row"><label>Room size</label><select id="gRSize"><option value="small">Small</option><option value="medium" selected>Medium</option><option value="large">Large</option></select></div>
+          <div class="row"><label>Corridors</label><select id="gCorr"><option value="1">1 square wide</option><option value="2">2 squares wide</option></select></div>
+          <div class="row"><label>Floor / wall</label><select id="gFloor">${Object.entries(MT.TEXTURES).map(([k, v]) => `<option value="${k}" ${k === 'stone' ? 'selected' : ''}>${v}</option>`).join('')}</select><select id="gWall">${Object.entries(WALL_KINDS).filter(([k]) => k !== 'none').map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+          <div class="btnrow"><label class="chk"><input type="checkbox" id="gDoors" checked> Doors</label><label class="chk"><input type="checkbox" id="gFurn" checked> Furniture &amp; traps</label><label class="chk"><input type="checkbox" id="gNum" checked> Room numbers</label><label class="chk"><input type="checkbox" id="gRock" checked> Solid rock around it</label><label class="chk"><input type="checkbox" id="gDark"> Dark, lit by torches</label></div>
+          <p class="muted">Each room is ${doc.grid.type === 'square' ? doc.grid.size : 70} px per square (the grid's cell size).</p>`}
+        <div class="row"><label>Seed</label><input type="number" id="gSeed" value="${seed()}" style="width:110px"><button class="mini" id="gDice" title="New random seed">🎲</button><span class="muted">the same seed makes the same map</span></div>
+        <p class="muted" style="color:#c9a64a">${doc.objects.length || (doc.dungeon && doc.dungeon.cells.length) ? 'This replaces everything on the current map. You can undo it with Ctrl+Z.' : ''}</p>
+        <div class="actions"><button id="gCancel">Cancel</button><button class="primary" id="gGo">Generate</button></div>`, (d) => {
+        d.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; render(); });
+        d.querySelector('#gCancel').onclick = closeDialog;
+        d.querySelector('#gDice').onclick = () => { d.querySelector('#gSeed').value = seed(); };
+        const rr = d.querySelector('#gRooms'); if (rr) rr.oninput = () => { d.querySelector('#gRoomsV').textContent = rr.value; };
+        d.querySelector('#gGo').onclick = () => {
+          const v = (id) => d.querySelector(id), chk = (id) => !!v(id)?.checked, sd = +v('#gSeed').value || seed();
+          let opts;
+          if (tab === 'world') opts = { seed: sd, shape: v('#gShape').value, land: +v('#gLand').value, realms: clamp(+v('#gRealms').value || 0, 0, 10), mountains: chk('#gMount'), forests: chk('#gForest'), rivers: chk('#gRivers'), towns: chk('#gTowns'), roads: chk('#gRoads'), sea: chk('#gSea'), title: chk('#gTitle'), key: chk('#gKey') };
+          else if (tab === 'town') opts = { seed: sd, size: v('#gSize').value, name: v('#gName').value.trim(), walls: chk('#gWalls'), river: chk('#gRiver'), eastern: chk('#gEast') };
+          else opts = { seed: sd, rooms: +v('#gRooms').value, roomSize: v('#gRSize').value, corridor: +v('#gCorr').value, floor: v('#gFloor').value, wall: v('#gWall').value, doors: chk('#gDoors'), furnish: chk('#gFurn'), numbers: chk('#gNum'), rock: chk('#gRock'), dark: chk('#gDark'), replace: true };
+          closeDialog(); runGenerator(tab, opts);
+        };
+      });
+    };
+    render();
+  }
+  function runGenerator(tab, opts) {
+    status('Generating…');
+    const prevDepth = ui.depthSort; ui.depthSort = true;
+    try {
+      if (tab === 'world') { if (doc.type !== 'world') { doc.type = 'world'; ui.kind = 'world'; } generateWorld(opts); }
+      else if (tab === 'town') { if (doc.type === 'world') { doc.type = 'town'; ui.kind = 'town'; } generateTown(opts); }
+      else { if (doc.type !== 'battle') { doc.type = 'battle'; ui.kind = 'battle'; } generateDungeon(opts); }
+    } finally { ui.depthSort = prevDepth; }
+    baseDirty = true; rebuildBase(true); buildLibrary(); syncTopbar(); commit(); refreshPanels(); needsDraw = true;
+    status(`Generated with seed ${opts.seed}. Everything can be edited, moved or deleted.`);
+  }
+
   // ------------------------------------------------------------------ example map
   function buildExample() {
     const W = doc.width, H = doc.height, R = MT.rng(doc.seed);
@@ -2298,6 +3271,7 @@
 
   async function boot() {
     await document.fonts.load('30px "IM Fell English"').catch(() => {});
+    if (api && api.testMode && api.testQuick) { loop(); try { const r = await QUICK[api.testQuick](api.testMode); document.title = `TESTDONE ${r || ''}`; } catch (err) { document.title = `TESTDONE ERROR ${err && err.stack}`; } return; }
     if (api && api.testMode) { await runTest(api.testMode); return; }
     newMap({ type: 'world', style: 'parchment', start: 'sea', name: 'The Known World' });
     setTool('land');
@@ -2311,6 +3285,110 @@
     }, 60000);
   }
 
+  // quick checks used while developing (MAPP_TEST=<dir> MAPP_QUICK=<name>)
+  const QUICK = {};
+  const qwait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const qshot = async (dir, name) => { needsDraw = true; await qwait(400); await api.testCapture(`${dir}/${name}.png`); };
+  QUICK.styles = async (dir) => {
+    for (const st of ['copperplate', 'night']) {
+      newMap({ type: 'world', style: st, start: 'example', name: 'The Known World', seed: 7 });
+      await qwait(2500); await whenImagesReady(); await qshot(dir, `style-${st}`);
+      const ex = await renderExportCanvas(1, false); await api.testWrite(`${dir}/export-${st}.png`, ex.toDataURL('image/png'));
+    }
+    return 'styles ok';
+  };
+  QUICK.gen = async (dir) => {
+    const out = [];
+    const ex = async (name) => { const c = await renderExportCanvas(Math.min(1, 1600 / Math.max(doc.width, doc.height)), true); await api.testWrite(`${dir}/${name}.png`, c.toDataURL('image/png')); };
+    newMap({ type: 'world', style: 'parchment', start: 'sea', name: 'Generated World' }); await qwait(300);
+    runGenerator('world', { seed: 4242, shape: 'continent', land: 0.42, realms: 4, mountains: true, forests: true, rivers: true, towns: true, roads: true, sea: true, title: true, key: true });
+    await qwait(1500); await whenImagesReady(); await ex('gen-world');
+    out.push(`world:${doc.objects.length}:realms=${doc.objects.filter(isRealm).length}:roads=${doc.objects.filter((o) => o.kind === 'road').length}:rivers=${doc.objects.filter((o) => o.kind === 'river').length}`);
+    runGenerator('world', { seed: 77, shape: 'archipelago', land: 0.35, realms: 0, mountains: true, forests: true, rivers: false, towns: true, roads: true, sea: true, title: true, key: false });
+    await qwait(1200); await whenImagesReady(); await ex('gen-archipelago');
+    newMap({ type: 'town', style: 'colour', start: 'sea', name: 'Town' }); await qwait(300);
+    runGenerator('town', { seed: 9, size: 'town', walls: true, river: true, eastern: false });
+    await qwait(1500); await whenImagesReady(); await ex('gen-town'); out.push(`town:${doc.objects.length}`);
+    newMap({ type: 'battle', style: 'colour', start: 'sea', name: 'Battle town', width: 2100, height: 1400 }); await qwait(300);
+    runGenerator('town', { seed: 3, size: 'village', walls: false, river: true, eastern: false });
+    await qwait(1500); await whenImagesReady(); await ex('gen-town-top'); out.push(`towntop:${doc.objects.length}`);
+    newMap({ type: 'battle', style: 'parchment', start: 'sea', name: 'Crypt', width: 2100, height: 1400 }); await qwait(300);
+    runGenerator('dungeon', { seed: 12, rooms: 9, roomSize: 'medium', corridor: 1, floor: 'stone', wall: 'stone', doors: true, furnish: true, numbers: true, rock: true, dark: false, replace: true });
+    await qwait(1500); await whenImagesReady(); await ex('gen-dungeon'); out.push(`dungeon:cells=${doc.dungeon.cells.length}:objs=${doc.objects.length}`);
+    doc.light.on = true; needsDraw = true; await qwait(300); await ex('gen-dungeon-dark');
+    await qshot(dir, 'ui-dungeon');
+    return out.join(' ');
+  };
+  QUICK.features = async (dir) => {
+    const out = [];
+    newMap({ type: 'world', style: 'parchment', start: 'example', name: 'The Known World', seed: 7 }); await qwait(2000); await whenImagesReady();
+    const r = stage.getBoundingClientRect();
+    const ev = (type, mx, my, extra = {}) => { const sx = r.left + view.ox + mx * view.zoom, sy = r.top + view.oy + my * view.zoom; stage.dispatchEvent(new PointerEvent(type, { clientX: sx, clientY: sy, button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerId: 1, bubbles: true, ...extra })); };
+    // realm drawn with the Lines tool
+    setTool('line'); ui.lineKind = 'realm'; renderToolOptions();
+    const ring = []; for (let a = 0; a < 6.3; a += 0.2) ring.push([1800 + Math.cos(a) * 700, 1100 + Math.sin(a) * 500]);
+    ev('pointerdown', ...ring[0]); ring.slice(1).forEach((p) => ev('pointermove', ...p)); ev('pointerup', ...ring[ring.length - 1]);
+    const realm = doc.objects.find(isRealm); out.push(`realm=${!!realm}:${realm && realm.name}:label=${!!(realm && findObj(realm.labelId))}`);
+    // routed road between two towns
+    ui.lineKind = 'road'; ui.autoRoute = true; renderToolOptions();
+    const towns = doc.objects.filter((o) => o.t === 'asset' && ['city', 'castle', 'village'].includes(o.a));
+    ev('pointerdown', towns[0].x, towns[0].y); ev('pointermove', towns[1].x, towns[1].y); ev('pointerup', towns[1].x, towns[1].y);
+    const road = doc.objects.filter((o) => o.kind === 'road').pop(); out.push(`road=${road ? road.pts.length : 0}pts`);
+    // map key
+    addLegend(); const key = doc.objects.find((o) => o.t === 'legend'); key.places = true; out.push(`key=${!!key}:${legendRows(key).length}rows`);
+    // measure
+    setTool('measure'); ev('pointerdown', 500, 500); ev('pointermove', 1500, 500); ev('pointerup', 1500, 500); out.push(`measure=${measureLabel(1000)}`);
+    // layer effects + lighting
+    doc.layers.text.fx = { shadow: true }; doc.layers.assets.fx = { glow: true, glowColor: '#ffe9a0', opacity: 0.95 };
+    addAsset('campfire', 1500, 900, { s: 0.6 }); doc.light.on = true; doc.light.dark = 0.5;
+    needsDraw = true; await qwait(500); await qshot(dir, 'feat-ui');
+    const c = await renderExportCanvas(0.5, false); await api.testWrite(`${dir}/feat-export.png`, c.toDataURL('image/png'));
+    doc.light.on = false; doc.layers.text.fx = null; doc.layers.assets.fx = null;
+    // marsh / jungle textures and the two new styles
+    texDab(900, 900, 400, 'marsh', false, 0.6, 0.9, true); texDab(1300, 700, 400, 'jungle', false, 0.6, 0.9, true); rebuildTexComposite();
+    // SVG
+    const svg = await buildSvg({ grid: false }); await api.testWrite(`${dir}/feat.svg.txt`, 'data:text/plain;base64,' + btoa(unescape(encodeURIComponent(svg))));
+    out.push(`svg=${Math.round(svg.length / 1024)}KB:uses=${(svg.match(/<use /g) || []).length}:texts=${(svg.match(/<text /g) || []).length}:fonts=${(svg.match(/@font-face/g) || []).length}`);
+    // PDF
+    const pdf = await exportPage('pdf', 'A4', 'auto', 0.25, false); out.push(`pdf=${!!pdf}`);
+    // serialize round trip keeps everything
+    const data = serialize(); await deserialize(data); await qwait(500);
+    out.push(`reload realms=${doc.objects.filter(isRealm).length} key=${doc.objects.filter((o) => o.t === 'legend').length} scale=${doc.scale.name}`);
+    // undo of dungeon carving
+    newMap({ type: 'battle', style: 'night', start: 'land', name: 'Night test' }); await qwait(300);
+    setTool('dungeon'); ui.dgMode = 'room'; ev('pointerdown', 150, 150); ev('pointermove', 600, 500); ev('pointerup', 600, 500);
+    ui.dgMode = 'cell'; ev('pointerdown', 600, 300); ev('pointermove', 1100, 300); ev('pointerup', 1100, 300);
+    const n1 = doc.dungeon.cells.length; undo(); const n2 = doc.dungeon.cells.length; redo(); const n3 = doc.dungeon.cells.length;
+    out.push(`dg=${n1}/${n2}/${n3}`);
+    addAsset('wall-torch', 375, 175, { s: 0.8 }); doc.light.on = true; needsDraw = true; await qwait(400); await qshot(dir, 'feat-night-dungeon');
+    return out.join(' ');
+  };
+  QUICK.svg = async (dir) => {
+    newMap({ type: 'world', style: 'parchment', start: 'example', name: 'The Known World', seed: 7 }); await qwait(2000); await whenImagesReady();
+    doc.objects.find((o) => o.t === 'asset' && o.a === 'castle').ef = { shadow: true, glow: true, glowColor: '#ff0000' };
+    doc.objects.find((o) => o.t === 'asset' && o.a === 'city').ef = { tint: '#3060ff', tintAmt: 0.5 };
+    runGenerator('world', { seed: 99, shape: 'continent', land: 0.42, realms: 3, mountains: true, forests: true, rivers: true, towns: true, roads: true, sea: true, title: true, key: true });
+    await qwait(800); await whenImagesReady();
+    const svg = await buildSvg({ grid: false });
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    const im = new Image(); im.src = url; await im.decode();
+    const c = document.createElement('canvas'); c.width = 1500; c.height = 1000; c.getContext('2d').drawImage(im, 0, 0, 1500, 1000);
+    await api.testWrite(`${dir}/svg-render.png`, c.toDataURL('image/png'));
+    const ref = await renderExportCanvas(0.5, false); await api.testWrite(`${dir}/svg-ref.png`, ref.toDataURL('image/png'));
+    return `svg ${svg.length}`;
+  };
+  QUICK.links = async (dir) => {
+    newMap({ type: 'town', style: 'colour', start: 'land', name: 'Linked Town' }); await qwait(300);
+    const townFile = `${dir}/linked-town.mapp`; await api.saveProject(serialize(), townFile);
+    newMap({ type: 'world', style: 'parchment', start: 'example', name: 'World With Link', seed: 7 }); await qwait(1500);
+    const worldFile = `${dir}/world-link.mapp`; filePath = worldFile;
+    const castle = doc.objects.find((o) => o.a === 'castle'); castle.link = { path: townFile, rel: 'linked-town.mapp', name: 'Linked Town' };
+    await api.saveProject(serialize(), worldFile); dirtyFlag = false;
+    needsDraw = true; await qwait(300); await qshot(dir, 'link-badge');
+    await openLinkedMap(castle); const a = doc.name; const back = !$('#backBtn').classList.contains('hidden');
+    await goBack(); const b = doc.name;
+    return `opened=${a} back=${back} returned=${b} linkKept=${!!doc.objects.find((o) => o.link)}`;
+  };
   // automated screenshot test (MAPP_TEST=<dir>)
   async function runTest(dir) {
     loop();
