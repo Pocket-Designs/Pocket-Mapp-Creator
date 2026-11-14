@@ -1,3 +1,8 @@
+<div align="center">
+<img width="224" height="224" alt="Pocket-Mapp-Creator" src="../src/icon.png" />
+</div>
+
+
 # Pocket-Mapp-Creator Developer Guide
 
 Version 0.3.0 · 9 November 2026 · Pocket-Designs
