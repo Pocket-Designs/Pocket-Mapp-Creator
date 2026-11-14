@@ -1,3 +1,8 @@
+<div align="center">
+<img width="224" height="224" alt="Pocket-Mapp-Creator" src="./src/icon.png" />
+</div>
+
+
 # Pocket-Mapp-Creator — Asset & Font Licences
 
 Pocket-Mapp-Creator itself is MIT licensed (see `LICENSE`). This file covers the product icon and everything bundled with the app that ends up in your maps.
