@@ -1,3 +1,10 @@
+
+<div align="center">
+<img width="224" height="224" alt="name" src="../src/icon.png" />
+</div>
+
+
+
 # Pocket-Mapp-Creator
 
 A desktop map maker in the spirit of Inkarnate, for Windows, Linux and macOS (Electron).
